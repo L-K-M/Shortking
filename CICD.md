@@ -115,7 +115,7 @@ names for the signed-macOS path:
 
 | Secret | What it is |
 | --- | --- |
-| `DEVELOPER_ID_P12_BASE64` | Developer ID Application certificate + private key, exported as `.p12` and base64-encoded (`base64 -i cert.p12 \| pbcopy`) |
+| `DEVELOPER_ID_P12_BASE64` | Developer ID Application certificate + private key, exported as `.p12` and base64-encoded (`base64 < cert.p12 \| tr -d '\n' \| pbcopy`) |
 | `DEVELOPER_ID_P12_PASSWORD` | The password set when exporting the `.p12` |
 | `KEYCHAIN_PASSWORD` | Any random string; protects the temporary keychain for the length of the run |
 | `APPLE_TEAM_ID` | The 10-character Apple Developer team identifier |
