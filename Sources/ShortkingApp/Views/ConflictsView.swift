@@ -10,10 +10,24 @@ struct ConflictsView: View {
     @State private var kindFilter: Set<Conflict.Kind> = []
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-            Divider()
+        // The scrollable content has to be the *root* of the screen. A plain VStack
+        // does not consume the window's top safe-area inset, so with the header as
+        // its first child everything was drawn underneath the title bar and toolbar.
+        // Hanging the header off `safeAreaInset` puts it below the chrome and lets
+        // the list inset itself correctly beneath it.
+        content
+            .safeAreaInset(edge: .top, spacing: 0) {
+                VStack(spacing: 0) {
+                    header
+                    Divider()
+                }
+                .background(.bar)
+            }
+    }
 
+    @ViewBuilder
+    private var content: some View {
+        Group {
             if filtered.isEmpty {
                 EmptyStateView(
                     symbol: state.result.conflicts.isEmpty
@@ -36,6 +50,7 @@ struct ConflictsView: View {
                 .listStyle(.inset)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var header: some View {
@@ -90,6 +105,14 @@ struct ClaimChipRow: View {
     let caption: String
     let claims: [Claim]
 
+    /// A conflict with dozens of claimants is real, but listing them all turns one
+    /// row into a screenful. Show enough to recognise the situation and count the
+    /// rest; the full list is in the combo's detail pane.
+    private static let visibleLimit = 6
+
+    private var visible: [Claim] { Array(claims.prefix(Self.visibleLimit)) }
+    private var overflow: Int { max(0, claims.count - Self.visibleLimit) }
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             Text(caption)
@@ -97,7 +120,14 @@ struct ClaimChipRow: View {
                 .foregroundStyle(.tertiary)
                 .frame(width: 44, alignment: .leading)
 
-            FlowingChips(claims: claims)
+            VStack(alignment: .leading, spacing: 4) {
+                FlowingChips(claims: visible)
+                if overflow > 0 {
+                    Text("and \(overflow) more")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+            }
         }
     }
 }

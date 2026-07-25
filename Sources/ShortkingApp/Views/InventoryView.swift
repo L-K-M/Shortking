@@ -13,12 +13,18 @@ struct InventoryView: View {
 
     var body: some View {
         HSplitView {
-            VStack(spacing: 0) {
-                toolbar
-                Divider()
-                list
-            }
-            .frame(minWidth: 420)
+            // Same reasoning as ConflictsView: the list must be the root so it picks
+            // up the window's top safe-area inset, with the search and filter bar
+            // hung off it rather than stacked above it.
+            list
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    VStack(spacing: 0) {
+                        toolbar
+                        Divider()
+                    }
+                    .background(.bar)
+                }
+                .frame(minWidth: 420)
 
             if let group = state.selectedGroup {
                 ComboDetailView(group: group)

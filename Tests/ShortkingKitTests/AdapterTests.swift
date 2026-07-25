@@ -276,4 +276,19 @@ final class ServicesScannerTests: XCTestCase {
         XCTAssertNil(missing)
         XCTAssertEqual(only, "Reveal in Finder")
     }
+
+    /// Real `pbs.plist` entries carry a bracketed suffix on the identifier, which
+    /// used to leak "(null" into the owner name shown in the conflict list.
+    func testStripsBracketedSuffixFromServiceIdentifier() {
+        let (bundleID, name) = ServicesScanner.parseServiceKey(
+            "(org.pqrs.Karabiner-Elements(null), Save Current AEM Form Service - runWorkflowAsService)"
+        )
+        XCTAssertEqual(bundleID, "org.pqrs.Karabiner-Elements")
+        XCTAssertEqual(name, "Save Current AEM Form Service - runWorkflowAsService")
+    }
+
+    func testBundleIDDisplayName() {
+        XCTAssertEqual(Owner.displayName(forBundleID: "co.podzim.BoltGPT"), "BoltGPT")
+        XCTAssertEqual(Owner.displayName(forBundleID: "Shortcat"), "Shortcat")
+    }
 }

@@ -75,10 +75,19 @@ public final class ServicesScanner: ClaimSource {
         let parts = trimmed.split(separator: ",", maxSplits: 1).map {
             $0.trimmingCharacters(in: .whitespaces)
         }
-        if parts.count == 2 {
-            return (parts[0].isEmpty ? nil : parts[0], parts[1])
+        guard parts.count == 2 else { return (nil, trimmed) }
+
+        // Some entries carry a suffix on the identifier, e.g.
+        // `(org.pqrs.Karabiner-Elements(null), Save Current Form)`. Everything from
+        // the first bracket on is noise, and leaving it in leaks "(null" into the
+        // owner name shown in the conflict list.
+        var bundleID = parts[0]
+        if let bracket = bundleID.firstIndex(of: "(") {
+            bundleID = String(bundleID[bundleID.startIndex..<bracket])
         }
-        return (nil, trimmed)
+        bundleID = bundleID.trimmingCharacters(in: .whitespaces)
+
+        return (bundleID.isEmpty ? nil : bundleID, parts[1])
     }
 }
 

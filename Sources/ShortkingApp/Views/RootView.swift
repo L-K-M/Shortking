@@ -9,14 +9,17 @@ struct RootView: View {
         NavigationSplitView {
             sidebar
         } detail: {
-            VStack(spacing: 0) {
-                detail
-                Divider()
-                StatusBar()
+            detail
+            // The status bar is a safe-area inset rather than a VStack sibling, so
+            // it pins to the bottom of the pane and the content above it scrolls
+            // underneath instead of being squeezed by it.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 0) {
+                    Divider()
+                    StatusBar()
+                }
             }
             // Title and toolbar belong to the detail pane, not to the split view.
-            // Hung off the split view they were drawn over the content instead of
-            // reserving space above it.
             .navigationTitle(state.destination.title)
             .navigationSubtitle(subtitle)
             .toolbar {
@@ -32,7 +35,10 @@ struct RootView: View {
                 }
             }
         }
-        .frame(minWidth: 940, minHeight: 620)
+        // Deliberately no `.frame(minWidth:minHeight:)` here: sizing the root view
+        // of a WindowGroup wraps the split view in a fixed container and was part of
+        // why safe-area insets were not reaching it. Window sizing belongs to the
+        // scene — see `.defaultSize` in ShortkingApp.
         .sheet(isPresented: $showingOnboarding) {
             OnboardingView(isPresented: $showingOnboarding)
                 .environmentObject(state)

@@ -10,6 +10,7 @@ struct ShortkingApp: App {
             RootView()
                 .environmentObject(state)
         }
+        .defaultSize(width: 1160, height: 760)
         .commands {
             // Reachable from anywhere, not just onboarding: a permission grant made
             // while Shortking is running needs a fresh process before it takes

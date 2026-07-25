@@ -5,8 +5,8 @@ import Foundation
 ///
 /// These are written to `NSUserKeyEquivalents` in the *target app's* preference
 /// domain (or `.GlobalPreferences` for "All Applications"). The on-disk location
-/// differs for sandboxed apps, so we read through `CFPreferencesCopyAppValue` with
-/// the bundle ID rather than guessing at paths.
+/// differs for sandboxed apps, so we read through CFPreferences with the bundle ID
+/// rather than guessing at paths.
 public final class UserKeyEquivalentScanner: ClaimSource {
 
     public let identifier = "user-key-equivalents"
@@ -14,7 +14,6 @@ public final class UserKeyEquivalentScanner: ClaimSource {
     public let requirement: ScanRequirement = .fileAccess
 
     private static let key = "NSUserKeyEquivalents" as CFString
-    private static let globalDomain = ".GlobalPreferences" as CFString
 
     public init() {}
 
@@ -25,8 +24,9 @@ public final class UserKeyEquivalentScanner: ClaimSource {
     public func scan(context: ScanContext) async throws -> [Claim] {
         var claims: [Claim] = []
 
-        // "All Applications" overrides.
-        if let global = read(domain: Self.globalDomain) {
+        // "All Applications" overrides — recorded once, against a single owner,
+        // rather than duplicated across every app they happen to apply to.
+        if let global = read(domain: kCFPreferencesAnyApplication) {
             claims.append(
                 contentsOf: makeClaims(
                     from: global,
@@ -56,8 +56,21 @@ public final class UserKeyEquivalentScanner: ClaimSource {
         return claims
     }
 
+    /// Reads `NSUserKeyEquivalents` from exactly one domain.
+    ///
+    /// **Not** `CFPreferencesCopyAppValue`, which is documented to fall back to the
+    /// global domain when the key is absent from the application domain. Used here
+    /// that meant a single "All Applications" shortcut was reported as a separate
+    /// claim for every installed app on the machine — one shortcut turning into
+    /// forty phantom claimants in the conflict list.
     private func read(domain: CFString) -> [String: String]? {
-        guard let raw = CFPreferencesCopyAppValue(Self.key, domain) else { return nil }
+        let raw = CFPreferencesCopyValue(
+            Self.key,
+            domain,
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost
+        )
+        guard let raw else { return nil }
         guard let dictionary = raw as? [String: String], !dictionary.isEmpty else { return nil }
         return dictionary
     }
