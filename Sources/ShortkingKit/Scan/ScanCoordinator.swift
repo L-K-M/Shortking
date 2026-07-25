@@ -34,9 +34,19 @@ public actor ScanCoordinator {
         self.database = database
     }
 
-    public static func defaultSources() -> [ClaimSource] {
+    /// The standard source set.
+    ///
+    /// The two caches are parameters rather than defaults constructed in place so
+    /// that a caller can hold on to them. "Clear caches" used to build *fresh*
+    /// `MenuCache` and `TriageCache` objects and clear those, which wrote an empty
+    /// file while the scanners kept their populated in-memory copies and overwrote
+    /// it on the next store. The button appeared to work and did nothing.
+    public static func defaultSources(
+        menuCache: MenuCache = MenuCache(),
+        triageCache: TriageCache = TriageCache()
+    ) -> [ClaimSource] {
         [
-            MenuBarScanner(),
+            MenuBarScanner(cache: menuCache),
             SymbolicHotKeyScanner(),
             UserKeyEquivalentScanner(),
             ServicesScanner(),
@@ -44,7 +54,7 @@ public actor ScanCoordinator {
             EventTapScanner(),
             AdapterRegistry(),
             GenericPreferenceScanner(),
-            BinaryTriage(),
+            BinaryTriage(cache: triageCache),
         ]
     }
 

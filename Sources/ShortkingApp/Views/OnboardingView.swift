@@ -51,15 +51,18 @@ struct OnboardingView: View {
         // reconnected on every re-render and never torn down.
         .task {
             while !Task.isCancelled {
-                refresh()
+                await refresh()
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
             }
         }
     }
 
-    private func refresh() {
+    private func refresh() async {
+        // `isTrusted` is a cheap TCC lookup and stays here; the functional check is
+        // an Accessibility round trip with a one-second timeout, so it is awaited off
+        // the main actor rather than blocking the sheet once a second.
         isTrusted = AXBridge.isTrusted
-        accessibilityWorks = state.accessibilityWorks
+        accessibilityWorks = await state.accessibilityWorks
     }
 
     // MARK: - Footer

@@ -186,24 +186,42 @@ struct InventoryView: View {
     }
 
     /// The by-owner and by-layer views, which flatten to claims rather than groups.
+    ///
+    /// Rows carry a `bucket|combination` tag rather than the bare combination key.
+    /// `List` requires tags to be unique across the *whole* list, and a combination
+    /// legitimately appears in several buckets — ⌘S is Save in every app — so the
+    /// old tagging made `List` highlight every matching row at once. Within a bucket
+    /// the rows are deduplicated by combination too, because one owner can hold the
+    /// same combination through two records.
     private func groupedList(by key: @escaping (Claim) -> String) -> some View {
-        let claims = state.filteredGroups.flatMap(\.claims)
         var buckets: [String: [Claim]] = [:]
-        for claim in claims { buckets[key(claim), default: []].append(claim) }
+        var seen: Set<String> = []
 
-        return List(selection: $state.selectedComboKey) {
-            ForEach(buckets.keys.sorted(), id: \.self) { bucket in
+        for claim in state.filteredGroups.flatMap(\.claims) {
+            let bucket = key(claim)
+            let rowKey = AppState.rowKey(bucket: bucket, comboKey: claim.combo.groupingKey)
+            guard seen.insert(rowKey).inserted else { continue }
+            buckets[bucket, default: []].append(claim)
+        }
+
+        let bucketNames = buckets.keys.sorted {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+
+        return List(selection: $state.selectedRowKey) {
+            ForEach(bucketNames, id: \.self) { bucket in
                 Section("\(bucket) — \(buckets[bucket]?.count ?? 0)") {
                     ForEach(buckets[bucket] ?? []) { claim in
                         HStack(spacing: 10) {
                             KeyComboBadge(combo: claim.combo, size: .small)
+                                .fixedSize()
                             Text(claim.label ?? claim.ownerName)
                                 .lineLimit(1)
                             Spacer()
                             LayerBadge(layer: claim.layer, compact: true)
                             StatusChip(status: claim.status)
                         }
-                        .tag(claim.combo.groupingKey)
+                        .tag(AppState.rowKey(bucket: bucket, comboKey: claim.combo.groupingKey))
                     }
                 }
             }
@@ -217,6 +235,8 @@ struct InventoryView: View {
         state.enabledOnly = false
         state.layerFilter = []
         state.statusFilter = []
+        showingRecorder = false
+        recordedCombo = nil
     }
 }
 
@@ -226,8 +246,13 @@ struct ComboRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // `fixedSize` first, so the column is a floor rather than a ceiling.
+            // fn⌃⌥⇧⌘PageDown does not fit in 130pt, and a fixed width made the
+            // keycaps compress and the key label truncate — the combination is the
+            // primary key of this table and is the one thing that must never be cut.
             KeyComboBadge(combo: group.combo)
-                .frame(width: 130, alignment: .leading)
+                .fixedSize()
+                .frame(minWidth: 130, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(claimantSummary)
