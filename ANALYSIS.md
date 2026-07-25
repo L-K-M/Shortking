@@ -628,12 +628,39 @@ not cover.)*
   warns about in a comment. Worth surfacing in Health too: "this build is ad-hoc
   signed, your permission grants will lapse on the next rebuild" is a
   first-day-of-development frustration the app is uniquely placed to explain.
-- **K5** — The repository's `Review PR with GLM 5.2` check fails on every pull
-  request, including ones that predate this work, in about four seconds — the
-  third-party action errors at startup. The workflow's skip step only guards the
-  *absence* of `ZAI_API_KEY`, so an action failure goes red with no explanation.
-  `continue-on-error: true` on the review step would make an advisory reviewer
-  advisory again.
+- **K5 — No macOS runner is available, so `ci.yml` has never built anything.**
+  **[blocks everything in §1]**
+
+  `Test & assemble` fails in three to four seconds with no steps recorded and:
+
+  ```
+  labels:      ["macos-14"]
+  runner_id:   0
+  runner_name: ""
+  ```
+
+  No runner is ever assigned. A re-run an hour later behaved identically, so this
+  is not transient queue exhaustion. The repository is **private**, where
+  GitHub-hosted macOS runners bill at a **10× minute multiplier** — a job that
+  never starts, on a private repo, with a `macos-*` label, is the standard
+  signature of the Actions spending limit being reached.
+
+  This is the single most consequential item in this document, because it is what
+  stands between the project and knowing whether *any* of its code compiles. #2
+  added CI on the explicit expectation that "the first CI run will be red, and the
+  failures it reports are the useful output". It has reported nothing.
+
+  Options, cheapest first: raise the Actions spending limit; make the repository
+  public (macOS minutes are free for public repos); or attach a self-hosted macOS
+  runner. Until one of them happens, `make app` on a Mac is the only way to find
+  out what the compiler thinks.
+
+- **K6** — `Review PR with GLM 5.2` fails on every pull request, including ones
+  that predate this work, in about four seconds — the third-party action errors at
+  startup. The workflow's skip step only guards the *absence* of `ZAI_API_KEY`, so
+  an action failure goes red with no explanation. `continue-on-error: true` on the
+  review step would make an advisory reviewer advisory again, instead of leaving
+  every PR on the board looking broken.
 
 ---
 
