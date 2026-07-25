@@ -8,6 +8,10 @@
 Shortking is a *diagnostic*, not a shortcut manager. It never rebinds anything on your behalf. The
 only system state it changes is transient and always restored.
 
+[![CI](https://github.com/L-K-M/Shortking/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Shortking/actions/workflows/ci.yml)
+
+**Source version:** v<!-- version -->0.1.0<!-- /version --> (no packaged GitHub Release is currently published)
+
 ---
 
 ## Why it exists
@@ -98,6 +102,18 @@ cannot:
 Requires macOS 14+ and a Swift 5.9+ toolchain.
 
 ```bash
+scripts/build.sh          # assemble build/Shortking.app and reveal it in Finder
+scripts/build.sh --run    # …and launch it
+scripts/build.sh --clean  # reset a wedged Swift build service, then build
+make test                 # unit tests
+```
+
+`scripts/build.sh` is a thin stub over the shared
+[lkm-build](https://github.com/L-K-M/release-tool) engine; it drives the same `make app`
+described below, and adds `--install` (to `/Applications`), `--zip` and `--dmg`. The
+Makefile remains the underlying entry point and works on its own:
+
+```bash
 make app      # assembles build/Shortking.app — this is what you want
 make run      # assemble and launch
 make test     # unit tests
@@ -113,6 +129,11 @@ For a signed, notarized build:
 make app SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
 make notarize KEYCHAIN_PROFILE=shortking-notary
 ```
+
+Published releases run exactly that path in CI — see [CICD.md](CICD.md). Cut one with
+`scripts/release.sh 1.2.3 --push`, which bumps the version in `Resources/Info.plist`,
+tags `v1.2.3`, and lets the release workflow sign, notarize and publish it. Shortking is
+never published unsigned.
 
 Shortking **cannot** ship on the Mac App Store: per-pid event taps are explicitly unsupported under
 App Sandbox, and reading other apps' preference domains is restricted. Distribution is Developer ID
