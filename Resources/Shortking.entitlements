@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Shortking is NOT sandboxed, and cannot be.
+
+	  Per-pid event taps are explicitly unsupported under App Sandbox (confirmed by
+	  Apple DTS), and reading other applications' preference domains and containers
+	  is restricted. That rules out the Mac App Store; distribution is Developer ID
+	  plus notarization.
+
+	  No debugger or dyld-injection entitlements are requested: the invasive tier
+	  (task_for_pid, DYLD_INSERT_LIBRARIES) is documented in PLAN.md and deliberately
+	  not shipped.
+	-->
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+
+	<!-- The probe helper is a separate executable inside the bundle. -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<false/>
+</dict>
+</plist>
