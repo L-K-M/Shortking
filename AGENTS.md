@@ -10,9 +10,10 @@ permissions, and distribution.
 - The app is a working SwiftUI GUI with a bundled CLI probe helper.
 - Targets: `ShortkingKit` (library), `ShortkingApp` (executable / `@main`),
   `ShortkingProbe` (auxiliary CLI).
-- Build: `make build` (or `swift build`; the Makefile wraps it).
+- Build: `scripts/build.sh` (or `make app`; the stub drives the Makefile).
 - Test: `make test` (or `swift test`). Pure unit tests for model logic.
-- No CI pipelines exist yet; macOS-only builds should gate on a macOS runner.
+- CI runs `swift test` + `make app` on `macos-14` with Xcode 16.2 pinned, and asserts
+  the assembled bundle's layout. See [CICD.md](CICD.md).
 
 ## Architecture invariants
 
@@ -60,9 +61,33 @@ make notarize # notarytool submission
 make dmg      # create distributable disk image
 ```
 
-CI should run `swift build` and `swift test` on a macOS runner. Release
-workflows should sign, notarize, staple, and package a `.dmg`, publishing it
-with a SHA-256 checksum. Never publish an unsigned application bundle.
+The `scripts/` stubs wrap those for the family-standard entry points:
+
+```bash
+scripts/build.sh [--clean] [--debug] [--run] [--install] [--zip] [--dmg]
+scripts/release.sh [X.Y[.Z]] [--push]
+```
+
+Both are ~25-line stubs over the shared engines in
+https://github.com/L-K-M/release-tool (install: clone + `./install.sh`). Keep them
+stubs — repo-specific build logic belongs in the Makefile (which
+`scripts/assemble-app.sh` invokes as the engine's `BUILD_SWIFTPM_ASSEMBLE`
+command), and anything the engine itself lacks belongs upstream as a new kind.
+
+`Resources/Info.plist` is the single source of truth for the version.
+`scripts/release.sh` bumps `CFBundleShortVersionString`, auto-increments
+`CFBundleVersion`, updates the README `<!-- version -->` marker, commits and tags —
+never edit the plist version by hand, and never create a `v*` tag by hand: the
+release workflow refuses a tag that disagrees with the committed version.
+
+CI runs `swift test` and `make app` on a macOS runner. The release workflow packages
+a `.dmg` and `.zip` and publishes them with SHA-256 sums. When the Developer ID
+secrets are configured it signs, notarizes and staples; when none of them are, it
+falls back to an ad-hoc signed build and says so in the release notes, the same as
+Top Drawer and Zap. A *partial* configuration fails the release — that is a
+misconfiguration, not a choice. Developer ID is what Shortking should ship under,
+because an app that asks for Accessibility and Input Monitoring is a poor candidate
+for a Gatekeeper warning; configure the secrets and the next tag upgrades itself.
 
 ## Repository automation
 
@@ -70,9 +95,11 @@ with a SHA-256 checksum. Never publish an unsigned application bundle.
   pull requests when `ZAI_API_KEY` is configured. It intentionally does not run
   for fork pull requests because `pull_request_target` has access to secrets.
 - Dependabot covers GitHub Actions updates weekly.
-- Add `ci.yml` and `release.yml` workflows once a macOS runner and signing
-  secrets are available. The release workflow must sign, notarize, staple, and
-  publish a checksummed DMG.
+- `.github/workflows/ci.yml` tests and assembles the bundle on every PR and push
+  to `main`; `.github/workflows/release.yml` builds, signs (Developer ID when the
+  secrets are set, ad-hoc otherwise) and publishes on a `v*` tag. Both pin Xcode
+  16.2 — bump the two together, and keep them in step with Top Drawer and Zap.
+  [CICD.md](CICD.md) documents both, including the seven release secrets.
 
 ## Conventions
 

@@ -1,0 +1,74 @@
+# CI: prove every push to main and every PR — unit tests plus a full .app
+# assembly, because the bundle (not the bare SwiftPM binary) is the real build
+# product and it is the part that breaks silently.
+#
+# Hardening (family contract):
+#   - least-privilege token (contents: read)
+#   - cancel superseded PR runs, but never an in-progress main run — a
+#     permanently "cancelled" main commit masks breakage and breaks bisection
+#   - timeout on every job so a wedged Swift build service can't burn runner
+#     hours (the CreateBuildDescription / clang-probe hang is a known one)
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build-test:
+    name: Test & assemble
+    runs-on: macos-14
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          # Pinned so a runner-image bump can't change the toolchain. Keep in
+          # step with release.yml, and with Top Drawer and Zap.
+          xcode-version: "16.2"
+
+      - name: Unit tests
+        run: swift test
+
+      # Ad-hoc signed, because no certificate is available here and none is
+      # needed to prove the bundle assembles. A signed build is release.yml's
+      # job — see CICD.md.
+      - name: Assemble the app bundle
+        run: make app
+
+      # The probe must live inside the bundle: ShortkingApp resolves it with
+      # Bundle.main.url(forAuxiliaryExecutable:), so a Makefile change that
+      # stopped staging it would leave probing silently broken at runtime
+      # rather than failing the build.
+      - name: Verify the assembled bundle
+        run: |
+          set -euo pipefail
+          APP="build/Shortking.app"
+          for f in \
+            "$APP/Contents/MacOS/Shortking" \
+            "$APP/Contents/MacOS/shortking-probe" \
+            "$APP/Contents/Info.plist" \
+            "$APP/Contents/PkgInfo"; do
+            [ -f "$f" ] || { echo "::error::assembled bundle is missing $f"; exit 1; }
+          done
+          codesign --verify --strict --verbose=2 "$APP"
+
+      - name: Upload the assembled bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: Shortking-app-${{ github.sha }}
+          path: build/Shortking.app
+          if-no-files-found: error
+          retention-days: 14
