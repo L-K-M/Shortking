@@ -74,7 +74,7 @@ final class AppState: ObservableObject {
     @Published private(set) var health = HealthReport(checks: [])
     @Published private(set) var isScanning = false
     @Published private(set) var scanPhase = ""
-    @Published var settings: Settings {
+    @Published var settings: AppSettings {
         didSet { settingsStore.update { $0 = settings } }
     }
 
@@ -92,7 +92,7 @@ final class AppState: ObservableObject {
     let attribution: AttributionStore
     let detective: DetectiveSession
     private let coordinator: ScanCoordinator
-    private let settingsStore = SettingsStore()
+    private let settingsStore: SettingsStore
     private let adapterRegistry = AdapterRegistry()
     private var differential: DifferentialEngine?
     private var previouslyEnabledTapIDs: Set<UInt32> = []
@@ -102,10 +102,12 @@ final class AppState: ObservableObject {
         // One store, shared by the coordinator (which folds inferences into scans)
         // and the detective session (which records live captures into it).
         let store = AttributionStore()
+        let settingsStore = SettingsStore()
         self.attribution = store
         self.detective = DetectiveSession(store: store)
         self.coordinator = ScanCoordinator(attribution: store)
-        self.settings = SettingsStore().current
+        self.settingsStore = settingsStore
+        self.settings = settingsStore.current
 
         // Show the last known inventory immediately rather than an empty window
         // while the first scan runs.

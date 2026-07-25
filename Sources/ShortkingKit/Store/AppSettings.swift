@@ -3,7 +3,10 @@ import Foundation
 /// User preferences. Persisted as JSON alongside the rest of the store rather than
 /// in `UserDefaults`, so that "reveal my data" shows the user everything in one
 /// folder.
-public struct Settings: Codable, Hashable, Sendable {
+///
+/// Named `AppSettings` rather than `Settings` because SwiftUI ships a `Settings`
+/// scene type, and any file importing both would be ambiguous.
+public struct AppSettings: Codable, Hashable, Sendable {
     public var scanOptions: ScanOptions
     /// Background differential learning across app launch/quit.
     public var differentialLearningEnabled: Bool
@@ -35,26 +38,26 @@ public struct Settings: Codable, Hashable, Sendable {
     }
 }
 
-/// Loads and saves ``Settings``.
+/// Loads and saves ``AppSettings``.
 public final class SettingsStore: @unchecked Sendable {
 
     public static let shared = SettingsStore()
 
-    private let store = JSONStore<Settings>(filename: "settings.json")
+    private let store = JSONStore<AppSettings>(filename: "settings.json")
     private let lock = NSLock()
-    private var cached: Settings
+    private var cached: AppSettings
 
     public init() {
-        cached = store.load() ?? Settings()
+        cached = store.load() ?? AppSettings()
     }
 
-    public var current: Settings {
+    public var current: AppSettings {
         lock.lock()
         defer { lock.unlock() }
         return cached
     }
 
-    public func update(_ transform: (inout Settings) -> Void) {
+    public func update(_ transform: (inout AppSettings) -> Void) {
         lock.lock()
         var settings = cached
         transform(&settings)
