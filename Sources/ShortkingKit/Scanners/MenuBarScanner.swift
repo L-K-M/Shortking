@@ -46,12 +46,12 @@ public final class MenuBarScanner: ClaimSource {
         var claims: [Claim] = []
         for app in targets {
             if Task.isCancelled { break }
-            claims.append(contentsOf: claims(for: app))
+            claims.append(contentsOf: makeClaims(for: app))
         }
         return claims
     }
 
-    private func claims(for app: RunningApp) -> [Claim] {
+    private func makeClaims(for app: RunningApp) -> [Claim] {
         let entries: [MenuEntry]
         if let cached = cache.entries(forKey: app.cacheKey) {
             entries = cached

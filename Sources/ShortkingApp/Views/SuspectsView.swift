@@ -145,8 +145,7 @@ struct EventTapRow: View {
                 if tap.tappedPID != 0 {
                     Text("tapping pid \(tap.tappedPID)")
                 }
-                Text("avg \(tap.avgLatencyUsec) µs")
-                Text("max \(tap.maxLatencyUsec) µs")
+                Text(tap.latencyDescription)
             }
             .font(.caption2)
             .foregroundStyle(.tertiary)

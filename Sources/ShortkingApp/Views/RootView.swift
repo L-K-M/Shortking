@@ -43,7 +43,7 @@ struct RootView: View {
 
     private var sidebar: some View {
         List(selection: $state.destination) {
-            ForEach(sections, id: \.name) { section in
+            ForEach(sections) { section in
                 Section(section.name) {
                     ForEach(section.destinations) { destination in
                         NavigationLink(value: destination) {
@@ -68,14 +68,23 @@ struct RootView: View {
         .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
     }
 
-    private var sections: [(name: String, destinations: [Destination])] {
+    /// A named group of sidebar destinations. A struct rather than a tuple because
+    /// `ForEach` needs an `Identifiable` element or a key path, and key paths into
+    /// tuple elements are not expressible in Swift.
+    private struct SidebarSection: Identifiable {
+        let name: String
+        let destinations: [Destination]
+        var id: String { name }
+    }
+
+    private var sections: [SidebarSection] {
         var order: [String] = []
         var grouped: [String: [Destination]] = [:]
         for destination in Destination.allCases {
             if grouped[destination.section] == nil { order.append(destination.section) }
             grouped[destination.section, default: []].append(destination)
         }
-        return order.map { ($0, grouped[$0] ?? []) }
+        return order.map { SidebarSection(name: $0, destinations: grouped[$0] ?? []) }
     }
 
     private func badge(for destination: Destination) -> String? {

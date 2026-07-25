@@ -86,7 +86,7 @@ public enum CarbonHotKey {
     /// which releases in a `defer` and cannot leak.
     public static func register(_ combo: KeyCombo, id: UInt32) -> (OSStatus, Registration?) {
         guard let keyCode = combo.keyCode else {
-            return (paramErr, nil)
+            return (OSStatus(paramErr), nil)
         }
         var ref: EventHotKeyRef?
         let hotKeyID = EventHotKeyID(signature: signature, id: id)
@@ -129,7 +129,7 @@ public enum CarbonHotKey {
     public static func selfTestProbingWorks() -> (works: Bool, status: OSStatus) {
         // ⌃⌥⌘F19 — a combination essentially nothing binds, so a "claimed" result
         // here really is our own registration and not a bystander.
-        guard let keyCode = KeyCodes.nameToKeyCode["f19"] else { return (false, paramErr) }
+        guard let keyCode = KeyCodes.nameToKeyCode["f19"] else { return (false, OSStatus(paramErr)) }
         let combo = KeyCombo(keyCode: keyCode, modifiers: [.control, .option, .command])
 
         let (firstStatus, holder) = register(combo, id: 0xF001)

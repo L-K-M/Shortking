@@ -10,9 +10,10 @@ public struct EventTapInfo: Identifiable, Hashable, Sendable {
     public var tappingPID: Int32
     public var tappedPID: Int32
     public var enabled: Bool
-    public var minLatencyUsec: UInt32
-    public var avgLatencyUsec: UInt32
-    public var maxLatencyUsec: UInt32
+    /// `CGEventTapInformation` reports these as microsecond `Float`s, not integers.
+    public var minLatencyUsec: Float
+    public var avgLatencyUsec: Float
+    public var maxLatencyUsec: Float
     public var owner: Owner
 
     public var id: UInt32 { tapID }
@@ -35,6 +36,11 @@ public struct EventTapInfo: Identifiable, Hashable, Sendable {
     /// The event types this tap asked for, as human-readable names.
     public var eventNames: [String] {
         EventTapScanner.decode(mask: eventMask)
+    }
+
+    /// Latency figures rounded for display.
+    public var latencyDescription: String {
+        String(format: "avg %.0f µs · max %.0f µs", avgLatencyUsec, maxLatencyUsec)
     }
 
     /// True when this tap can actually swallow a keystroke.
@@ -94,7 +100,7 @@ public final class EventTapScanner: ClaimSource {
                         "tapPoint": tap.tapPoint.rawValue,
                         "events": tap.eventNames.joined(separator: ", "),
                         "enabled": tap.enabled ? "yes" : "no",
-                        "avgLatencyUsec": "\(tap.avgLatencyUsec)",
+                        "latency": tap.latencyDescription,
                         "tappedPID": tap.tappedPID == 0 ? "all" : "\(tap.tappedPID)",
                     ]
                 )
