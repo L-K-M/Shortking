@@ -12,6 +12,9 @@ only system state it changes is transient and always restored.
 
 **Source version:** v<!-- version -->0.1.0<!-- /version --> (no packaged GitHub Release is currently published)
 
+> [!IMPORTANT]
+> LLM Disclosure: Shortking was built with substantial help from large language models — primarily Anthropic's Claude, via Claude Code. Much of the code arrived through AI-authored commits and `claude/*` pull-request branches, with agent guidance kept in [`AGENTS.md`](AGENTS.md)
+
 ---
 
 ## Why it exists
