@@ -1,7 +1,27 @@
 .build/
 build/
+dist/
 .swiftpm/
 Package.resolved
 *.xcodeproj
 *.xcworkspace
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcarchive
+
+# IDE and operating-system state
+.idea/
+.vscode/
+*.iml
 .DS_Store
+
+# Signing material and local credentials
+*.jks
+*.keystore
+*.p12
+*.mobileprovision
+*.cer
+*.key
+*.env
+.env.*
