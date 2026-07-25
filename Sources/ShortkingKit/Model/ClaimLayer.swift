@@ -141,5 +141,15 @@ public struct Owner: Codable, Hashable, Sendable {
         bundleID ?? path ?? name
     }
 
+    /// A readable name for an app we only know by bundle ID.
+    ///
+    /// `co.podzim.BoltGPT` → `BoltGPT`. Showing the raw identifier in the conflict
+    /// list is technically accurate and useless — the user has to recognise the app
+    /// to act on the conflict.
+    public static func displayName(forBundleID bundleID: String) -> String {
+        let last = bundleID.split(separator: ".").last.map(String.init) ?? ""
+        return last.isEmpty ? bundleID : last
+    }
+
     public static let macOS = Owner(name: "macOS", bundleID: "com.apple.systemuiserver", kind: .system)
 }

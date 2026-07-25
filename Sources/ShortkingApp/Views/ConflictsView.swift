@@ -84,9 +84,64 @@ struct ConflictsView: View {
     }
 }
 
+/// A caption plus one chip per claim, each showing the layer, the owner, and the
+/// function it binds — the label is what distinguishes two claims by the same owner.
+struct ClaimChipRow: View {
+    let caption: String
+    let claims: [Claim]
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(caption)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .frame(width: 44, alignment: .leading)
+
+            FlowingChips(claims: claims)
+        }
+    }
+}
+
+private struct FlowingChips: View {
+    let claims: [Claim]
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) { chips }
+            VStack(alignment: .leading, spacing: 4) { chips }
+        }
+    }
+
+    @ViewBuilder
+    private var chips: some View {
+        ForEach(claims) { claim in
+            HStack(spacing: 4) {
+                LayerBadge(layer: claim.layer, compact: true)
+                Text(claim.ownerName)
+                    .font(.caption)
+                if let label = claim.label, !label.isEmpty {
+                    Text(label)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+}
+
 struct ConflictListRow: View {
     @EnvironmentObject private var state: AppState
     let conflict: Conflict
+
+    /// Two claims from the same owner with the same label are one thing to the
+    /// user, however many records back them — "macOS, macOS" is noise.
+    private var dedupedLosers: [Claim] {
+        var seen = Set<String>()
+        return conflict.losers.filter { claim in
+            seen.insert("\(claim.owner?.identity ?? claim.ownerName)|\(claim.label ?? "")").inserted
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -103,34 +158,26 @@ struct ConflictListRow: View {
             Text(conflict.explanation)
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
+                // Long measures are hard to read; conflict explanations are prose,
+                // not table cells, so they stop well short of the window edge.
+                .frame(maxWidth: 720, alignment: .leading)
 
             if let suggestion = conflict.suggestion {
                 Label(suggestion, systemImage: "lightbulb")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 720, alignment: .leading)
             }
 
             if let winner = conflict.winner {
-                HStack(spacing: 8) {
-                    Text("Wins:").font(.caption).foregroundStyle(.tertiary)
-                    LayerBadge(layer: winner.layer, compact: true)
-                    Text(winner.ownerName).font(.caption)
-                }
+                ClaimChipRow(caption: "Wins:", claims: [winner])
             }
 
-            if !conflict.losers.isEmpty {
-                HStack(spacing: 8) {
-                    Text("Loses:").font(.caption).foregroundStyle(.tertiary)
-                    ForEach(conflict.losers) { loser in
-                        HStack(spacing: 4) {
-                            LayerBadge(layer: loser.layer, compact: true)
-                            Text(loser.ownerName).font(.caption)
-                        }
-                    }
-                }
+            if !dedupedLosers.isEmpty {
+                ClaimChipRow(caption: "Loses:", claims: dedupedLosers)
             }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
     }
 }

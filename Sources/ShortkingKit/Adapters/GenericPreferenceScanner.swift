@@ -54,7 +54,11 @@ public final class GenericPreferenceScanner: ClaimSource {
             guard let root = NSDictionary(contentsOfFile: path) as? [String: Any] else { continue }
 
             let owner = ownersByBundleID[bundleID]
-                ?? Owner(name: bundleID, bundleID: bundleID, kind: .application)
+                ?? Owner(
+                    name: Owner.displayName(forBundleID: bundleID),
+                    bundleID: bundleID,
+                    kind: .application
+                )
 
             for (key, value) in root {
                 guard let found = Self.extract(key: key, value: value) else { continue }

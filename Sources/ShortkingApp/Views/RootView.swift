@@ -14,20 +14,25 @@ struct RootView: View {
                 Divider()
                 StatusBar()
             }
-        }
-        .frame(minWidth: 940, minHeight: 620)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    state.rescan()
-                } label: {
-                    Label("Rescan", systemImage: "arrow.clockwise")
+            // Title and toolbar belong to the detail pane, not to the split view.
+            // Hung off the split view they were drawn over the content instead of
+            // reserving space above it.
+            .navigationTitle(state.destination.title)
+            .navigationSubtitle(subtitle)
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        state.rescan()
+                    } label: {
+                        Label("Rescan", systemImage: "arrow.clockwise")
+                    }
+                    .disabled(state.isScanning)
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Re-read every source (⌘R)")
                 }
-                .disabled(state.isScanning)
-                .keyboardShortcut("r", modifiers: .command)
-                .help("Re-read every source (⌘R)")
             }
         }
+        .frame(minWidth: 940, minHeight: 620)
         .sheet(isPresented: $showingOnboarding) {
             OnboardingView(isPresented: $showingOnboarding)
                 .environmentObject(state)
@@ -38,6 +43,15 @@ struct RootView: View {
             } else {
                 state.rescan()
             }
+        }
+    }
+
+    private var subtitle: String {
+        switch state.destination {
+        case .inventory: return "\(state.result.groups.count) combinations"
+        case .conflicts: return "\(state.result.conflicts.count) conflicts"
+        case .suspects:  return "\(state.result.eventTaps.count) event taps"
+        default:         return ""
         }
     }
 
@@ -65,6 +79,7 @@ struct RootView: View {
                 }
             }
         }
+        .listStyle(.sidebar)
         .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
     }
 

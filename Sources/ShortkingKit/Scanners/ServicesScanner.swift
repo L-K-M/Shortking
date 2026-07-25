@@ -41,7 +41,7 @@ public final class ServicesScanner: ClaimSource {
             let enabled = (entry["enabled_services_menu"] as? Bool) ?? true
 
             let ownerName = context.installedApps.first { $0.bundleID == bundleID }?.name
-                ?? bundleID
+                ?? bundleID.map(Owner.displayName(forBundleID:))
                 ?? "Services"
 
             claims.append(

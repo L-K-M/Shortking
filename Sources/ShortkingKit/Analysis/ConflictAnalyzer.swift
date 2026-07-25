@@ -58,16 +58,37 @@ public enum ConflictAnalyzer {
             let atLowest = globals.filter { $0.layer == lowestLayer }
 
             if atLowest.count > 1 {
+                // Described per claim rather than per owner: macOS routinely binds
+                // one combination to several symbolic hotkeys, and "macOS and macOS
+                // all claim ⌃↓" tells the user nothing about which two functions
+                // are fighting.
+                let described = describeAll(atLowest)
+
+                // macOS ships several symbolic hotkeys bound to the same key by
+                // default. Those collisions are real, but they are Apple's and there
+                // are dozens of them — ranked alongside "two apps are fighting over
+                // ⇧⌘P" they bury the conflicts the user can actually act on.
+                let isSystemDefault = lowestLayer == .symbolic
+                    && atLowest.allSatisfy { $0.owner?.kind == .system }
+
                 return Conflict(
                     combo: group.combo,
                     kind: .definite,
                     winner: nil,
                     losers: atLowest,
-                    explanation: "\(names(atLowest)) all claim \(group.combo.displayString) at the "
-                        + "\(lowestLayer.displayName) layer. Which one wins depends on registration "
-                        + "order, so the behaviour can change between reboots.",
-                    suggestion: "Rebind all but one of them.",
-                    severity: .high
+                    explanation: "\(group.combo.displayString) is claimed \(atLowest.count) times "
+                        + "at the \(lowestLayer.displayName) layer — \(list(described)). Which one "
+                        + "wins depends on registration order, so the behaviour can change between "
+                        + "reboots."
+                        + (isSystemDefault
+                            ? " These are all macOS's own shortcuts, so this is how the system "
+                                + "shipped rather than something another app did."
+                            : ""),
+                    suggestion: isSystemDefault
+                        ? "Change or turn off all but one in System Settings ▸ Keyboard ▸ "
+                            + "Keyboard Shortcuts."
+                        : "Rebind all but one of them.",
+                    severity: isSystemDefault ? .low : .high
                 )
             }
 
@@ -138,19 +159,48 @@ public enum ConflictAnalyzer {
 
         guard let lowestLoser = losers.min(by: { $0.layer < $1.layer }) else { return base }
 
+        let described = describeAll(losers)
+        let singular = described.count == 1
         return base + "\(winner.layer.explanation) "
-            + "\(names(losers)) claim it at the \(lowestLoser.layer.displayName) layer or below, "
-            + "so \(losers.count == 1 ? "it never fires" : "they never fire")."
+            + "\(list(described)) \(singular ? "claims" : "claim") it at the "
+            + "\(lowestLoser.layer.displayName) layer or below, so "
+            + "\(singular ? "it never fires" : "they never fire")."
     }
 
+    /// Distinct owner names, in stable order.
     private static func names(_ claims: [Claim]) -> String {
-        let unique = Array(Set(claims.map(\.ownerName))).sorted()
-        switch unique.count {
-        case 0: return "Nothing"
-        case 1: return unique[0]
-        case 2: return "\(unique[0]) and \(unique[1])"
-        default:
-            return unique.dropLast().joined(separator: ", ") + " and " + unique[unique.count - 1]
+        var seen = Set<String>()
+        var unique: [String] = []
+        for claim in claims where seen.insert(claim.ownerName).inserted {
+            unique.append(claim.ownerName)
+        }
+        return list(unique)
+    }
+
+    /// One claim as `Owner “Label”`, or just the owner when it has no label.
+    static func describe(_ claim: Claim) -> String {
+        guard let label = claim.label, !label.isEmpty else { return claim.ownerName }
+        return "\(claim.ownerName) “\(label)”"
+    }
+
+    /// Distinct claim descriptions, preserving order.
+    static func describeAll(_ claims: [Claim]) -> [String] {
+        var seen = Set<String>()
+        var out: [String] = []
+        for claim in claims {
+            let description = describe(claim)
+            if seen.insert(description).inserted { out.append(description) }
+        }
+        return out
+    }
+
+    /// Joins with an Oxford-free "a, b and c".
+    private static func list(_ items: [String]) -> String {
+        switch items.count {
+        case 0:  return "nothing"
+        case 1:  return items[0]
+        case 2:  return "\(items[0]) and \(items[1])"
+        default: return items.dropLast().joined(separator: ", ") + " and " + items[items.count - 1]
         }
     }
 

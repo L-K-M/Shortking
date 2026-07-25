@@ -10,7 +10,6 @@ struct ShortkingApp: App {
             RootView()
                 .environmentObject(state)
         }
-        .windowToolbarStyle(.unified)
         .commands {
             // Reachable from anywhere, not just onboarding: a permission grant made
             // while Shortking is running needs a fresh process before it takes
