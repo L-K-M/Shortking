@@ -36,6 +36,12 @@ public final class BinaryTriage: ClaimSource {
     }
 
     public func scan(context: ScanContext) async throws -> [Claim] {
+        // One write per scan rather than one per installed app. In a `defer` so an
+        // interrupted scan keeps whatever `nm` results it already paid for — those
+        // are the expensive part, and re-running them is what the cache exists to
+        // avoid.
+        defer { cache.flush() }
+
         var claims: [Claim] = []
 
         for app in context.installedApps {
@@ -98,11 +104,14 @@ public final class BinaryTriage: ClaimSource {
 public final class TriageCache: @unchecked Sendable {
 
     private var storage: [String: [String]] = [:]
+    private var isDirty = false
     private let lock = NSLock()
     private let persistence: JSONStore<[String: [String]]>?
 
     public init(persistent: Bool = true) {
-        self.persistence = persistent ? JSONStore(filename: "triage-cache.json") : nil
+        self.persistence = persistent
+            ? JSONStore(filename: "triage-cache.json", prettyPrinted: false)
+            : nil
         if let loaded = persistence?.load() { storage = loaded }
     }
 
@@ -121,17 +130,38 @@ public final class TriageCache: @unchecked Sendable {
         return storage[fingerprint]
     }
 
+    /// Records one binary's symbols in memory. Call ``flush()`` when the scan is done.
     public func store(_ symbols: [String], forFingerprint fingerprint: String) {
         lock.lock()
         storage[fingerprint] = symbols
-        let snapshot = storage
+        isDirty = true
         lock.unlock()
+    }
+
+    /// Persists the cache, once, if anything changed.
+    ///
+    /// This used to happen inside ``store(_:forFingerprint:)``, which is called once
+    /// per *installed* application — so a first run on a machine with three hundred
+    /// apps performed three hundred full re-encodes and three hundred atomic file
+    /// replacements. The `nm` invocations are the expensive part of this scanner;
+    /// there is no reason to make the bookkeeping quadratic on top of them.
+    public func flush() {
+        lock.lock()
+        guard isDirty else {
+            lock.unlock()
+            return
+        }
+        let snapshot = storage
+        isDirty = false
+        lock.unlock()
+
         persistence?.save(snapshot)
     }
 
     public func clear() {
         lock.lock()
         storage = [:]
+        isDirty = false
         lock.unlock()
         persistence?.save([:])
     }

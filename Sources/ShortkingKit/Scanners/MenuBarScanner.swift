@@ -43,6 +43,11 @@ public final class MenuBarScanner: ClaimSource {
             targets = targets.filter(\.isActive)
         }
 
+        // One write per scan rather than one per app. In a `defer` so that a
+        // cancelled or timed-out scan still keeps the menus it managed to read —
+        // a partial cache is strictly better than none.
+        defer { cache.flush() }
+
         var claims: [Claim] = []
         for app in targets {
             if Task.isCancelled { break }
@@ -152,13 +157,16 @@ public final class MenuCache: @unchecked Sendable {
     }
 
     private var storage: [String: Entry] = [:]
+    private var isDirty = false
     private let lock = NSLock()
     private let ttl: TimeInterval
     private let persistence: JSONStore<[String: Entry]>?
 
     public init(ttl: TimeInterval = 60 * 60 * 24, persistent: Bool = true) {
         self.ttl = ttl
-        self.persistence = persistent ? JSONStore(filename: "menu-cache.json") : nil
+        self.persistence = persistent
+            ? JSONStore(filename: "menu-cache.json", prettyPrinted: false)
+            : nil
         if let loaded = persistence?.load() {
             storage = loaded
         }
@@ -170,22 +178,49 @@ public final class MenuCache: @unchecked Sendable {
         guard let entry = storage[key] else { return nil }
         guard Date().timeIntervalSince(entry.storedAt) < ttl else {
             storage[key] = nil
+            isDirty = true
             return nil
         }
         return entry.entries
     }
 
+    /// Records one app's menus in memory. Call ``flush()`` when the scan is done.
     public func store(_ entries: [MenuEntry], forKey key: String) {
         lock.lock()
         storage[key] = Entry(entries: entries, storedAt: Date())
-        let snapshot = storage
+        isDirty = true
         lock.unlock()
+    }
+
+    /// Persists the cache, once, if anything changed.
+    ///
+    /// This used to happen inside ``store(_:forKey:)``, which is called **once per
+    /// running application** — so a cold scan on a machine with forty apps performed
+    /// forty full JSON re-encodes and forty atomic file replacements of a document
+    /// that grows to several megabytes. Quadratic in the number of running apps, all
+    /// of it on the scan's critical path.
+    ///
+    /// Expired entries are dropped here too. They were only ever removed on read, so
+    /// an app the user uninstalled a year ago kept its menus in the file forever.
+    public func flush() {
+        lock.lock()
+        guard isDirty else {
+            lock.unlock()
+            return
+        }
+        let cutoff = Date().addingTimeInterval(-ttl)
+        storage = storage.filter { $0.value.storedAt >= cutoff }
+        let snapshot = storage
+        isDirty = false
+        lock.unlock()
+
         persistence?.save(snapshot)
     }
 
     public func clear() {
         lock.lock()
         storage = [:]
+        isDirty = false
         lock.unlock()
         persistence?.save([:])
     }
