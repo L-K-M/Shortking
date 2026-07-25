@@ -382,3 +382,128 @@ final class AttributionTests: XCTestCase {
         XCTAssertEqual(claims[0].owner?.name, "Raycast")
     }
 }
+
+final class InputSourceScannerTests: XCTestCase {
+
+    /// ⌃Space — the default "select the previous input source".
+    private let combo = KeyCombo(keyCode: 0x31, modifiers: [.control])
+
+    /// The claim `SymbolicHotKeyScanner` builds for a symbolic hotkey ID.
+    ///
+    /// Constructed through the catalog exactly as the scanner does, because the
+    /// coupling *is* the invariant being tested: two sources describing one hotkey
+    /// have to produce one `Claim.identity`.
+    private func symbolicClaim(id: Int32) -> Claim {
+        Claim(
+            combo: combo,
+            layer: .symbolic,
+            status: .known,
+            owner: SymbolicHotKeyCatalog.owner(for: id),
+            label: SymbolicHotKeyCatalog.label(for: id),
+            evidence: [Evidence(kind: .symbolicHotKey, summary: "Symbolic hotkey \(id)")]
+        )
+    }
+
+    /// `SymbolicHotKeyScanner` sweeps IDs 0…300, which includes the input-source
+    /// switching hotkeys, so both sources describe the same shortcut. When they
+    /// disagreed about layer and owner the merger kept both, and `ConflictAnalyzer`
+    /// — seeing two global claims at two different layers — reported ⌃Space as
+    /// shadowing itself. Every Mac with a second keyboard layout got a fabricated
+    /// conflict out of it.
+    func testInputSourceEnrichmentMergesIntoTheSymbolicClaim() {
+        let symbolic = symbolicClaim(id: 60)
+        let enrichment = InputSourceScanner.enrichment(
+            id: 60,
+            combo: combo,
+            enabled: true,
+            sourceCount: 2,
+            sourceNames: ["ABC", "German"],
+            path: "/Users/test/Library/Preferences/com.apple.HIToolbox.plist"
+        )
+
+        XCTAssertEqual(symbolic.identity, enrichment.identity)
+
+        let merged = ClaimMerger.merge([symbolic, enrichment])
+        XCTAssertEqual(merged.count, 1, "one shortcut, one claimant")
+        XCTAssertEqual(merged[0].evidence.count, 2, "both pieces of evidence survive")
+    }
+
+    func testInputSourceSwitchingIsNotAConflictWithItself() {
+        let merged = ClaimMerger.merge([
+            symbolicClaim(id: 60),
+            InputSourceScanner.enrichment(
+                id: 60,
+                combo: combo,
+                enabled: true,
+                sourceCount: 2,
+                sourceNames: ["ABC", "German"],
+                path: "/Users/test/Library/Preferences/com.apple.HIToolbox.plist"
+            ),
+        ])
+
+        let groups = ConflictAnalyzer.analyze(ClaimMerger.group(merged))
+        XCTAssertEqual(groups.count, 1)
+        XCTAssertNil(groups[0].conflict)
+    }
+}
+
+final class OptionHardeningEvidenceTests: XCTestCase {
+
+    private let optionOnly = KeyCombo(character: "o", modifiers: [.option, .shift])
+
+    private func report(outcome: CarbonHotKey.ProbeOutcome, combo: KeyCombo) -> ProbeReport {
+        ProbeReport(
+            results: [
+                CarbonHotKey.ProbeResult(
+                    combo: combo,
+                    outcome: outcome,
+                    status: CarbonHotKey.internalErr
+                )
+            ],
+            breadth: .common,
+            startedAt: Date(),
+            finishedAt: Date(),
+            probingVerified: true
+        )
+    }
+
+    /// "My ⌥⇧O shortcut stopped working after the upgrade" is answered entirely by
+    /// the restriction, so the refusal belongs on the claim that thinks it holds the
+    /// combination — but it is nobody's claim, so it must not become one.
+    func testRestrictedResultAttachesEvidenceWithoutCreatingAClaim() {
+        let app = Claim(
+            combo: optionOnly,
+            layer: .windowServer,
+            status: .known,
+            owner: Owner(name: "BoltGPT", bundleID: "co.podzim.BoltGPT"),
+            label: "Quick capture"
+        )
+
+        let result = ClaimMerger.applyProbeReport(report(outcome: .restricted, combo: optionOnly), to: [app])
+
+        XCTAssertEqual(result.count, 1, "a restriction is nobody's claim")
+        XCTAssertTrue(result[0].evidence.contains { $0.summary.contains("Option-key restriction") })
+        XCTAssertNil(
+            ConflictAnalyzer.analyze(ClaimMerger.group(result)).first?.conflict,
+            "the restriction explains the combination; it does not contest it"
+        )
+    }
+
+    /// A session-tap tool pattern-matches in its own code and never asks
+    /// WindowServer for anything, so the ⌥-hardening does not apply to it and the
+    /// evidence would be actively misleading there.
+    func testRestrictedEvidenceDoesNotAttachToASessionTapClaim() {
+        let skhd = Claim(
+            combo: optionOnly,
+            layer: .sessionTap,
+            status: .known,
+            owner: Owner(name: "skhd"),
+            label: "open -a Finder"
+        )
+
+        let result = ClaimMerger.applyProbeReport(report(outcome: .restricted, combo: optionOnly), to: [skhd])
+
+        XCTAssertEqual(result.count, 1)
+        XCTAssertTrue(result[0].evidence.isEmpty)
+    }
+}
