@@ -1,6 +1,32 @@
 import ShortkingKit
 import SwiftUI
 
+/// An element paired with its position in a collection.
+///
+/// `ForEach(Array(items.enumerated()), id: \.element.id)` is the shape everyone
+/// reaches for when a row needs to know whether to draw a leading divider — and it
+/// does not compile. `EnumeratedSequence.Element` is a tuple, and Swift has no key
+/// paths into tuple elements; it is the same constraint that makes
+/// `RootView.SidebarSection` a struct rather than a tuple. This is the version that
+/// compiles, and it keeps the intent legible at the call site.
+struct Positioned<Element>: Identifiable {
+    let index: Int
+    let element: Element
+    let id: AnyHashable
+
+    /// True for every element except the first — the divider test, named.
+    var needsSeparator: Bool { index > 0 }
+}
+
+extension Sequence where Element: Identifiable {
+    /// Pairs each element with its position, borrowing the element's own identity.
+    func positioned() -> [Positioned<Element>] {
+        enumerated().map {
+            Positioned(index: $0.offset, element: $0.element, id: AnyHashable($0.element.id))
+        }
+    }
+}
+
 /// A key combination rendered as keycaps.
 ///
 /// Modifiers always appear in the canonical macOS order (⌃⌥⇧⌘) regardless of the
@@ -29,10 +55,23 @@ struct KeyComboBadge: View {
         }
     }
 
+    /// The glyphs, each with a stable position-based identity.
+    ///
+    /// Position rather than glyph, because a combination can legitimately repeat one
+    /// — and a `ForEach` keyed on the glyph itself would silently drop the duplicate.
+    private var keycaps: [Keycap] {
+        combo.keycaps.enumerated().map { Keycap(id: $0.offset, glyph: $0.element) }
+    }
+
+    private struct Keycap: Identifiable {
+        let id: Int
+        let glyph: String
+    }
+
     var body: some View {
         HStack(spacing: size == .large ? 6 : 3) {
-            ForEach(Array(combo.keycaps.enumerated()), id: \.offset) { _, cap in
-                Text(cap)
+            ForEach(keycaps) { cap in
+                Text(cap.glyph)
                     .font(size.font)
                     .padding(.horizontal, size.padding + 2)
                     .padding(.vertical, size.padding - 1)

@@ -43,6 +43,9 @@ struct HomeView: View {
             .padding(28)
             .frame(maxWidth: 1000)
             .frame(maxWidth: .infinity)
+            // Sections appear and vanish as a scan lands. Without this they snap,
+            // which reads as a redraw glitch rather than as new information.
+            .animation(.smooth, value: state.result.finishedAt)
         }
         .background { Palette.canvas }
     }
@@ -67,8 +70,10 @@ struct HomeView: View {
 
                 if let recorded {
                     verdictPanel(for: recorded)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
+            .animation(.smooth, value: recorded)
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
@@ -234,9 +239,9 @@ struct HomeView: View {
             )
 
             Panel {
-                ForEach(Array(state.appConflicts.prefix(5).enumerated()), id: \.element.id) { index, conflict in
-                    if index > 0 { Divider() }
-                    ConflictSummaryRow(conflict: conflict)
+                ForEach(state.appConflicts.prefix(5).positioned()) { row in
+                    if row.needsSeparator { Divider() }
+                    ConflictSummaryRow(conflict: row.element)
                 }
             }
 
@@ -257,17 +262,16 @@ struct HomeView: View {
             )
 
             Panel {
-                ForEach(
-                    Array(state.intermittentConflicts.prefix(4).enumerated()),
-                    id: \.element.id
-                ) { index, conflict in
-                    if index > 0 { Divider() }
-                    ConflictSummaryRow(conflict: conflict)
+                ForEach(state.intermittentConflicts.prefix(4).positioned()) { row in
+                    if row.needsSeparator { Divider() }
+                    ConflictSummaryRow(conflict: row.element)
                 }
 
-                ForEach(Array(state.intermittencyWarnings.enumerated()), id: \.element.id) { index, check in
-                    if index > 0 || !state.intermittentConflicts.isEmpty { Divider() }
-                    WarningSummaryRow(check: check)
+                ForEach(state.intermittencyWarnings.positioned()) { row in
+                    // The warnings follow the conflicts inside one panel, so the
+                    // first warning still needs a separator when conflicts preceded it.
+                    if row.needsSeparator || !state.intermittentConflicts.isEmpty { Divider() }
+                    WarningSummaryRow(check: row.element)
                 }
             }
         }
@@ -336,8 +340,14 @@ struct ConflictSummaryRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
+            // `fixedSize` before the frame, so the column is a *minimum* rather than a
+            // ceiling. fn⌃⌥⇧⌘PageDown is wider than 132pt, and a fixed width made the
+            // keycaps compress and the key label truncate — the combination is the
+            // primary key of this whole screen and is the one thing that must never
+            // be clipped.
             KeyComboBadge(combo: conflict.combo)
-                .frame(width: 132, alignment: .leading)
+                .fixedSize()
+                .frame(minWidth: 132, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(claimants)

@@ -21,6 +21,12 @@ struct ComboRecorder: View {
     @State private var didTimeOut = false
     @State private var timeoutTask: Task<Void, Never>?
 
+    /// How long to listen before giving up.
+    ///
+    /// Long enough to switch focus and press deliberately; short enough that a
+    /// forgotten recorder does not sit swallowing every keystroke in the app.
+    private static let recordingTimeout: TimeInterval = 10
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
@@ -28,7 +34,7 @@ struct ComboRecorder: View {
                     if let combo {
                         KeyComboBadge(combo: combo, size: .large)
                     } else {
-                        Text(isRecording ? "Press the shortcut now…" : "No shortcut selected")
+                        Text(isRecording ? "Press the shortcut now — ⎋ cancels" : "No shortcut selected")
                             .font(.system(size: 15, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
@@ -98,8 +104,13 @@ struct ComboRecorder: View {
             return nil  // swallow it so we do not also trigger something in our own UI
         }
 
-        timeoutTask = Task {
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
+        // `@MainActor` is load-bearing. `startRecording()` is an ordinary method on a
+        // `View` struct, so it is not actor-isolated — only `body` is — and a bare
+        // `Task` here would run the timeout on the cooperative pool. That path calls
+        // `NSEvent.removeMonitor`, which is not thread-safe, and mutates `@State`
+        // from off the main thread.
+        timeoutTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.recordingTimeout * 1_000_000_000))
             guard !Task.isCancelled, isRecording else { return }
             didTimeOut = true
             stopRecording()
