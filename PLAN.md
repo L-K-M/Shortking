@@ -94,8 +94,11 @@ status bar showing last-scan time, permission health dot, and a **Rescan** butto
 │ ● ● ●   Shortking                                          [⌘R Rescan]     │
 ├──────────────┬─────────────────────────────────────────────────────────────┤
 │              │                                                             │
+│  START HERE  │                                                             │
+│  ▸ Overview  │                       (detail pane)                         │
+│              │                                                             │
 │  INVENTORY   │                                                             │
-│  ▸ All combos│                       (detail pane)                         │
+│  ▸ All combos│                                                             │
 │  ▸ Conflicts │                                                             │
 │              │                                                             │
 │  INVESTIGATE │                                                             │
@@ -111,7 +114,46 @@ status bar showing last-scan time, permission health dot, and a **Rescan** butto
 └────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 3.2 All combos (the inventory)
+### 3.2 Overview — the home screen
+
+The app opens here, and the screen is built around the two reasons anyone launches it:
+**a shortcut does the wrong thing**, and **a shortcut works only sometimes**. Everything else is
+navigation.
+
+**The hero is the recorder.** A gradient panel with one instruction — *press the shortcut that
+misbehaved* — and a keycap-styled recorder inside a material well so its controls keep system
+contrast against the colour. On capture, the verdict appears inline, straight from the inventory:
+
+- *"Raycast has ⌘Space"* — named owner, layer explained.
+- *"⇧⌘Space is claimed more than once"* — the conflict, in full.
+- *"Something holds ⌘⇧G, and it won't say what"* — the unattributed state, with **Investigate live**.
+- *"No app can claim ⌥⇧O"* — the macOS 15 Option hardening, which is an answer, not a conflict.
+
+Detective Mode is offered as escalation rather than as the starting point: the verdict says whether
+a live capture would actually add anything, so the user is never sent to run taps for a question
+the inventory already answered.
+
+**Four summary cards** in an adaptive grid, each a saturated gradient carrying meaning rather than
+decoration — warm for "two things are fighting", violet for "somebody has this and won't say who",
+blue for "these processes can see your keys", green for "nothing to do". Every card states the same
+thing in words, so colour is reinforcement and never the only signal.
+
+**Then the two lists that answer the two questions:**
+
+- *Two apps want the same shortcut* — non-system conflicts only, each as combination, "BoltGPT vs
+  Tuna", the explanation, and **Investigate**.
+- *Works only sometimes* — contextual conflicts (a global hotkey shadowing an app's own menu item)
+  together with the health warnings that cause intermittency: secure input stuck on, a tap that
+  quietly died, the Option restriction.
+
+macOS's own colliding defaults are deliberately **not** on this screen. They are real, and there are
+dozens of them, but they are Apple's arrangement rather than something an installed app did — they
+stay on the Conflicts screen with everything else, where the severity ranking already demotes them.
+
+When there is nothing to report the screen says so plainly, and points out that a shortcut can still
+misbehave because of something that registers nothing and has to be caught in the act.
+
+### 3.3 All combos (the inventory)
 
 A **grouped-by-combo table**. The unit of the UI is the *key combination*, not the *claim* — because
 the user's mental model is "what happens when I press this", and conflicts are only visible when
@@ -140,7 +182,7 @@ quit, 7/7 observations`).
 Row actions (context menu): *Reveal config file*, *Open System Settings pane*, *Copy as text*,
 *Investigate in Detective Mode*, *Identify owner…*.
 
-### 3.3 Conflicts
+### 3.4 Conflicts
 
 The same table filtered and sorted by severity, with conflicts classified:
 
@@ -155,7 +197,7 @@ a **suggested resolution** that is always advisory (never automatic): *"Raycast 
 WindowServer layer, ahead of Spotlight's symbolic hotkey 64. Disable Spotlight's binding in System
 Settings ▸ Keyboard ▸ Keyboard Shortcuts ▸ Spotlight, or rebind Raycast."*
 
-### 3.4 Detective
+### 3.5 Detective
 
 The screen for question 2. A guided, stateful investigation of a *single* combo.
 
@@ -200,7 +242,7 @@ Below the cards, a **side-channel** strip (§5.6) that is always on during a liv
 cross-referenced against the `CGGetEventTapList` suspect set. This is the only technique that works
 against event-tap claimants, so it runs unconditionally as a fallback.
 
-### 3.5 Suspects
+### 3.6 Suspects
 
 The `CGGetEventTapList` panel — *"these 6 processes can intercept keystrokes."* One row per tap:
 process name + icon, tap point (HID / session / annotated / per-pid), active-filter vs. listen-only,
@@ -213,7 +255,7 @@ A second section, **Capability triage**, lists installed apps whose binaries imp
 mtime). This narrows ~300 installed apps to the ~20 worth investigating, and covers apps that are not
 running.
 
-### 3.6 Health
+### 3.7 Health
 
 The non-conflict failure modes from §9 of the research doc, each as a check with a status, an
 explanation, and a fix action:
@@ -233,7 +275,7 @@ The functional probe matters: `AXIsProcessTrusted()` can return `true` when laun
 that holds Accessibility, and event taps can silently die after a re-sign while TCC still reports
 granted. We verify by *doing*, not by asking.
 
-### 3.7 Settings
+### 3.8 Settings
 
 - Scan scope: which sources are enabled (menus are the slow one — a toggle and a "menus only for
   frontmost app" mode).
@@ -243,7 +285,7 @@ granted. We verify by *doing*, not by asking.
 - Data: store location, export inventory as JSON / Markdown / CSV, reset attribution DB.
 - Adapters: the list of config adapters with per-adapter enable and detected-path status.
 
-### 3.8 Onboarding
+### 3.9 Onboarding
 
 A three-pane flow shown on first launch and re-entered from Health when a grant lapses:
 
@@ -253,7 +295,7 @@ A three-pane flow shown on first launch and re-entered from Health when a grant 
    relaunch may be needed.
 3. Input Monitoring grant — framed as optional, unlocking Detective Mode only.
 
-### 3.9 Visual language
+### 3.10 Visual language
 
 - `KeyComboBadge`: keycap-styled, canonical modifier order ⌃⌥⇧⌘, glyph rendering for arrows,
   Return/Tab/Escape/Delete, and the F-keys.

@@ -6,6 +6,7 @@ import SwiftUI
 
 /// The sidebar destinations.
 enum Destination: String, Hashable, CaseIterable, Identifiable {
+    case home
     case inventory
     case conflicts
     case detective
@@ -17,6 +18,7 @@ enum Destination: String, Hashable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .home:      return "Overview"
         case .inventory: return "All combos"
         case .conflicts: return "Conflicts"
         case .detective: return "Detective"
@@ -28,6 +30,7 @@ enum Destination: String, Hashable, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .home:      return "sparkles"
         case .inventory: return "keyboard"
         case .conflicts: return "exclamationmark.triangle"
         case .detective: return "magnifyingglass"
@@ -39,6 +42,7 @@ enum Destination: String, Hashable, CaseIterable, Identifiable {
 
     var section: String {
         switch self {
+        case .home:                  return "Start here"
         case .inventory, .conflicts: return "Inventory"
         case .detective, .suspects:  return "Investigate"
         case .health, .settings:     return "System"
@@ -69,7 +73,7 @@ final class AppState: ObservableObject {
 
     // MARK: - Published state
 
-    @Published var destination: Destination = .inventory
+    @Published var destination: Destination = .home
     @Published private(set) var result = ScanResult()
     @Published private(set) var health = HealthReport(checks: [])
     @Published private(set) var isScanning = false
@@ -246,6 +250,136 @@ final class AppState: ObservableObject {
     /// Capability records — processes that *could* take a key, with no known binding.
     var capabilityClaims: [Claim] {
         result.claims.filter { $0.status == .capability }
+    }
+
+    // MARK: - Overview
+
+    /// Two apps fighting over the same shortcut. The answer to "why does this do
+    /// the wrong thing".
+    var appConflicts: [Conflict] {
+        result.conflicts.filter { !$0.isSystemDefault && $0.kind == .definite }
+    }
+
+    /// Shortcuts that fire everywhere except where the user expects. The answer to
+    /// "why does this work only sometimes".
+    var intermittentConflicts: [Conflict] {
+        result.conflicts.filter { !$0.isSystemDefault && $0.isIntermittent }
+    }
+
+    /// Collisions between macOS's own shortcuts — real, but Apple's, and not what
+    /// anyone opens the app to find out.
+    var systemConflicts: [Conflict] {
+        result.conflicts.filter(\.isSystemDefault)
+    }
+
+    var unknownOwnerGroups: [ComboGroup] {
+        result.groups.filter { $0.conflict?.kind == .unattributed }
+    }
+
+    /// Health problems that specifically cause a working shortcut to stop or
+    /// misfire, as opposed to Shortking's own permission state.
+    var intermittencyWarnings: [HealthCheck] {
+        health.checks.filter { check in
+            guard check.status == .warning || check.status == .failing else { return false }
+            return ["secure-input", "dead-taps", "option-hardening"].contains(check.id)
+        }
+    }
+
+    var tapsThatCanSwallowKeys: Int {
+        result.eventTaps.filter(\.canSwallowKeys).count
+    }
+
+    /// True when nothing on the overview needs the user's attention.
+    var everythingLooksFine: Bool {
+        appConflicts.isEmpty
+            && intermittentConflicts.isEmpty
+            && intermittencyWarnings.isEmpty
+            && !result.claims.isEmpty
+    }
+
+    // MARK: - Instant verdict
+
+    /// What Shortking can say about a combination without running anything.
+    struct Verdict {
+        enum Tone {
+            case good
+            case conflict
+            case unknown
+            case blocked
+        }
+
+        var tone: Tone
+        var headline: String
+        var detail: String
+        /// Whether a live investigation would add anything.
+        var offersInvestigation: Bool
+    }
+
+    /// The answer to "I pressed this and the wrong thing happened", straight from
+    /// the inventory. Detective Mode is for when this isn't enough — which the
+    /// verdict says explicitly rather than leaving the user to guess.
+    func verdict(for combo: KeyCombo) -> Verdict {
+        if combo.isRestrictedByOptionHardening {
+            return Verdict(
+                tone: .blocked,
+                headline: "No app can claim \(combo.displayString)",
+                detail: "Since macOS 15, shortcuts whose only modifiers are ⌥ or ⌥⇧ are refused "
+                    + "system-wide as an anti-keylogging measure. If this one used to work, that "
+                    + "is why — it is not a conflict, and rebinding the app won't help.",
+                offersInvestigation: false
+            )
+        }
+
+        guard let group = result.groups.first(where: { $0.combo == combo }) else {
+            return Verdict(
+                tone: .unknown,
+                headline: "Nothing Shortking can see claims \(combo.displayString)",
+                detail: "No config file, menu bar, preference domain or hotkey registration "
+                    + "accounts for it. That points at the frontmost app's own handling, or at a "
+                    + "tool that pattern-matches keys in its own code and registers nothing.",
+                offersInvestigation: true
+            )
+        }
+
+        if let conflict = group.conflict {
+            switch conflict.kind {
+            case .unattributed:
+                return Verdict(
+                    tone: .unknown,
+                    headline: "Something holds \(combo.displayString), and it won't say what",
+                    detail: conflict.explanation,
+                    offersInvestigation: true
+                )
+            default:
+                return Verdict(
+                    tone: .conflict,
+                    headline: conflict.kind == .contextual
+                        ? "\(conflict.winner?.ownerName ?? "Something") takes \(combo.displayString) first"
+                        : "\(combo.displayString) is claimed more than once",
+                    detail: conflict.explanation,
+                    offersInvestigation: true
+                )
+            }
+        }
+
+        guard let winner = group.winner else {
+            return Verdict(
+                tone: .unknown,
+                headline: "\(combo.displayString) is claimed, but everything holding it is disabled",
+                detail: "Every claim Shortking found on this combination is switched off, so "
+                    + "pressing it should do nothing at all.",
+                offersInvestigation: true
+            )
+        }
+
+        return Verdict(
+            tone: .good,
+            headline: "\(winner.ownerName) has \(combo.displayString)",
+            detail: [winner.label, winner.layer.explanation]
+                .compactMap { $0 }
+                .joined(separator: " — "),
+            offersInvestigation: winner.confidence < 1.0
+        )
     }
 
     var unattributedCount: Int {

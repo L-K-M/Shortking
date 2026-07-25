@@ -47,6 +47,21 @@ public struct Conflict: Identifiable, Hashable, Sendable {
     public var suggestion: String?
     public var severity: Severity
 
+    /// Every claimant is macOS itself.
+    ///
+    /// macOS ships a number of symbolic hotkeys that collide with each other out of
+    /// the box. Those collisions are real, but they are Apple's arrangement rather
+    /// than something an installed app did, and the user's first question is almost
+    /// never about them — so the overview separates the two.
+    public var isSystemDefault: Bool
+
+    /// A conflict only some of the time: a global claim shadowing an app's own menu
+    /// shortcut fires everywhere *except* where the user expects, which reads as
+    /// "this works inconsistently" rather than "this is broken".
+    public var isIntermittent: Bool {
+        kind == .contextual || (kind == .shadowed && losers.contains { $0.layer == .appMenu })
+    }
+
     public init(
         combo: KeyCombo,
         kind: Kind,
@@ -54,7 +69,8 @@ public struct Conflict: Identifiable, Hashable, Sendable {
         losers: [Claim],
         explanation: String,
         suggestion: String? = nil,
-        severity: Severity
+        severity: Severity,
+        isSystemDefault: Bool = false
     ) {
         self.combo = combo
         self.kind = kind
@@ -63,6 +79,7 @@ public struct Conflict: Identifiable, Hashable, Sendable {
         self.explanation = explanation
         self.suggestion = suggestion
         self.severity = severity
+        self.isSystemDefault = isSystemDefault
     }
 
     public static func == (lhs: Conflict, rhs: Conflict) -> Bool {

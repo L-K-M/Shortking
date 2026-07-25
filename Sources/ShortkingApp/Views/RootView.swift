@@ -54,6 +54,12 @@ struct RootView: View {
 
     private var subtitle: String {
         switch state.destination {
+        case .home:
+            let count = state.appConflicts.count
+            if state.result.claims.isEmpty { return "" }
+            return count == 0
+                ? "no app conflicts"
+                : "\(count) app conflict\(count == 1 ? "" : "s")"
         case .inventory: return "\(state.result.groups.count) combinations"
         case .conflicts: return "\(state.result.conflicts.count) conflicts"
         case .suspects:  return "\(state.result.eventTaps.count) event taps"
@@ -127,6 +133,7 @@ struct RootView: View {
     @ViewBuilder
     private var detail: some View {
         switch state.destination {
+        case .home:      HomeView()
         case .inventory: InventoryView()
         case .conflicts: ConflictsView()
         case .detective: DetectiveView()

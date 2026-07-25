@@ -88,7 +88,8 @@ public enum ConflictAnalyzer {
                         ? "Change or turn off all but one in System Settings ▸ Keyboard ▸ "
                             + "Keyboard Shortcuts."
                         : "Rebind all but one of them.",
-                    severity: isSystemDefault ? .low : .high
+                    severity: isSystemDefault ? .low : .high,
+                    isSystemDefault: isSystemDefault
                 )
             }
 
