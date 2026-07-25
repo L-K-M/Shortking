@@ -256,14 +256,22 @@ final class AppState: ObservableObject {
 
     /// Two apps fighting over the same shortcut. The answer to "why does this do
     /// the wrong thing".
+    ///
+    /// Includes `.shadowed` as well as `.definite`: from the user's side, "macOS
+    /// takes ⌃⌘S and Karabiner never gets it" is two apps fighting, whatever the
+    /// analyzer calls the shape of it. Only `.contextual` is left out, because that
+    /// one genuinely reads as "works everywhere except here" and has its own
+    /// section.
     var appConflicts: [Conflict] {
-        result.conflicts.filter { !$0.isSystemDefault && $0.kind == .definite }
+        result.conflicts.filter {
+            !$0.isSystemDefault && ($0.kind == .definite || $0.kind == .shadowed)
+        }
     }
 
     /// Shortcuts that fire everywhere except where the user expects. The answer to
     /// "why does this work only sometimes".
     var intermittentConflicts: [Conflict] {
-        result.conflicts.filter { !$0.isSystemDefault && $0.isIntermittent }
+        result.conflicts.filter { !$0.isSystemDefault && $0.kind == .contextual }
     }
 
     /// Collisions between macOS's own shortcuts — real, but Apple's, and not what
@@ -285,8 +293,54 @@ final class AppState: ObservableObject {
         }
     }
 
-    var tapsThatCanSwallowKeys: Int {
-        result.eventTaps.filter(\.canSwallowKeys).count
+    /// Event taps grouped by the process that installed them.
+    ///
+    /// One process routinely installs several taps — universalaccessd has three —
+    /// so a raw tap count and a process count are different numbers, and quoting
+    /// one while showing the other is how "6 processes" ended up above a list of 21
+    /// rows.
+    struct TapProcess: Identifiable {
+        var pid: Int32
+        var owner: Owner
+        var taps: [EventTapInfo]
+
+        var id: Int32 { pid }
+
+        /// Installs at least one enabled, active filter that asks for key events.
+        var canSwallowKeys: Bool {
+            taps.contains { $0.canSwallowKeys }
+        }
+
+        /// Sees key events, even if only to observe them.
+        var watchesKeys: Bool {
+            taps.contains { EventTapScanner.masksKeyEvents($0.eventMask) }
+        }
+
+        var hasDisabledTap: Bool {
+            taps.contains { !$0.enabled }
+        }
+    }
+
+    var tapProcesses: [TapProcess] {
+        var byPID: [Int32: [EventTapInfo]] = [:]
+        for tap in result.eventTaps {
+            byPID[tap.tappingPID, default: []].append(tap)
+        }
+
+        return byPID.compactMap { pid, taps -> TapProcess? in
+            guard let first = taps.first else { return nil }
+            return TapProcess(pid: pid, owner: first.owner, taps: taps)
+        }
+        .sorted { lhs, rhs in
+            // Most dangerous first: swallowers, then key watchers, then the rest.
+            if lhs.canSwallowKeys != rhs.canSwallowKeys { return lhs.canSwallowKeys }
+            if lhs.watchesKeys != rhs.watchesKeys { return lhs.watchesKeys }
+            return lhs.owner.name.localizedStandardCompare(rhs.owner.name) == .orderedAscending
+        }
+    }
+
+    var processesThatCanSwallowKeys: Int {
+        tapProcesses.filter(\.canSwallowKeys).count
     }
 
     /// True when nothing on the overview needs the user's attention.

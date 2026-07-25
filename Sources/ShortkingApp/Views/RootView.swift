@@ -35,10 +35,20 @@ struct RootView: View {
                 }
             }
         }
-        // Deliberately no `.frame(minWidth:minHeight:)` here: sizing the root view
-        // of a WindowGroup wraps the split view in a fixed container and was part of
-        // why safe-area insets were not reaching it. Window sizing belongs to the
-        // scene — see `.defaultSize` in ShortkingApp.
+        // An *ideal* size is what stops AppKit sizing the window to fit its content.
+        // Without one, a long screen like Suspects reports a very tall ideal, the
+        // window grows to match, and it snaps back every time the selection changes
+        // — which is exactly what happened. `maxWidth`/`maxHeight` of `.infinity`
+        // keep it freely resizable; the ideal is only consulted for the automatic
+        // size.
+        .frame(
+            minWidth: 900,
+            idealWidth: 1160,
+            maxWidth: .infinity,
+            minHeight: 560,
+            idealHeight: 760,
+            maxHeight: .infinity
+        )
         .sheet(isPresented: $showingOnboarding) {
             OnboardingView(isPresented: $showingOnboarding)
                 .environmentObject(state)

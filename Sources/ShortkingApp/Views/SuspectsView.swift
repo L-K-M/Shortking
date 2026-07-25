@@ -7,6 +7,10 @@ import SwiftUI
 /// binding lives only in that app's own code — but it gives an exact, authoritative
 /// suspect list. Paired with static binary triage it covers apps that are not even
 /// running.
+///
+/// Grouped by **process**, not by tap: one process routinely installs several taps
+/// (universalaccessd installs three), so a flat list of taps made the overview's
+/// process count look unrelated to what was on screen.
 struct SuspectsView: View {
     @EnvironmentObject private var state: AppState
 
@@ -14,7 +18,7 @@ struct SuspectsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 explanation
-                tapSection
+                processSection
                 capabilitySection
             }
             .padding(18)
@@ -23,29 +27,44 @@ struct SuspectsView: View {
     }
 
     private var explanation: some View {
-        Text("These processes can see or swallow your keystrokes. Shortking cannot read what "
-            + "combinations they consume — event-tap tools pattern-match in their own code and "
-            + "register nothing with the system — so this is a suspect list, not an inventory. "
-            + "Their bindings show up in the inventory only via their config files.")
-            .font(.callout)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 8) {
+            Text(summary)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Shortking cannot read which combinations they consume — event-tap tools "
+                + "pattern-match in their own code and register nothing with the system — so this "
+                + "is a suspect list, not an inventory. Their bindings show up in the inventory "
+                + "only via their config files.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
-    private var tapSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Active event taps (\(state.result.eventTaps.count))")
-                .font(.headline)
+    /// Spells out the relationship between the counts, since the overview quotes
+    /// the process figure and this screen shows the taps behind it.
+    private var summary: String {
+        let processes = state.tapProcesses
+        guard !processes.isEmpty else {
+            return "No event taps are installed. Nothing on this machine is filtering keystrokes "
+                + "at the session or HID layer."
+        }
+        let swallowers = state.processesThatCanSwallowKeys
+        let taps = state.result.eventTaps.count
 
-            if state.result.eventTaps.isEmpty {
-                Text("No event taps installed. Nothing on this machine is filtering keystrokes "
-                    + "at the session or HID layer.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(state.result.eventTaps) { tap in
-                    EventTapRow(tap: tap)
-                }
+        return "\(taps) event tap\(taps == 1 ? "" : "s") across \(processes.count) "
+            + "process\(processes.count == 1 ? "" : "es"). "
+            + (swallowers == 0
+                ? "None of them can swallow a keystroke — they only observe."
+                : "\(swallowers) can intercept and swallow keystrokes; the rest only observe, or "
+                    + "watch the mouse.")
+    }
+
+    private var processSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(state.tapProcesses) { process in
+                TapProcessCard(process: process)
             }
         }
     }
@@ -94,43 +113,86 @@ struct SuspectsView: View {
     }
 }
 
-struct EventTapRow: View {
-    let tap: EventTapInfo
+/// One process, with every tap it installed.
+struct TapProcessCard: View {
+    let process: AppState.TapProcess
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(tap.owner.name)
-                    .font(.callout.weight(.medium))
+                Text(process.owner.name)
+                    .font(.body.weight(.semibold))
 
-                Text(tap.tapPoint.rawValue)
-                    .font(.caption)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 1)
-                    .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                Text("pid \(process.pid)")
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.tertiary)
 
-                if tap.isActiveFilter {
-                    Label("Can swallow keys", systemImage: "scissors")
+                if process.canSwallowKeys {
+                    Label("Can swallow keystrokes", systemImage: "scissors")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Palette.crimson)
+                } else if process.watchesKeys {
+                    Label("Watches keystrokes", systemImage: "ear")
                         .font(.caption)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.amber)
                 } else {
-                    Label("Listen only", systemImage: "ear")
+                    Label("No key events", systemImage: "cursorarrow")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
                 Spacer()
 
-                if !tap.enabled {
-                    Label("Disabled", systemImage: "xmark.circle.fill")
+                if process.hasDisabledTap {
+                    Label("Has a disabled tap", systemImage: "xmark.circle.fill")
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .help("This tap is installed but not receiving events, so its shortcuts "
-                            + "will not fire. Usually a timeout or a code-signature change.")
+                        .help("A tap that is installed but not receiving events. Its shortcuts "
+                            + "will not fire — usually a timeout or a code-signature change.")
                 }
             }
 
-            HStack(spacing: 6) {
+            ForEach(process.taps) { tap in
+                EventTapRow(tap: tap)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    process.canSwallowKeys ? Palette.crimson.opacity(0.35) : Color.clear,
+                    lineWidth: 1
+                )
+        )
+    }
+}
+
+/// One tap belonging to a process.
+struct EventTapRow: View {
+    let tap: EventTapInfo
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(tap.tapPoint.rawValue)
+                .font(.caption2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                .frame(width: 118, alignment: .leading)
+
+            // "Active filter" is the honest description: whether it can swallow a
+            // *key* also depends on the mask, which the chips below spell out.
+            Text(tap.isActiveFilter ? "active filter" : "listen only")
+                .font(.caption2)
+                .foregroundStyle(tap.isActiveFilter ? Palette.amber : .secondary)
+                .frame(width: 78, alignment: .leading)
+
+            HStack(spacing: 4) {
                 ForEach(tap.eventNames, id: \.self) { name in
                     Text(name)
                         .font(.caption2.monospaced())
@@ -140,25 +202,18 @@ struct EventTapRow: View {
                 }
             }
 
-            HStack(spacing: 14) {
-                Text("pid \(tap.tappingPID)")
-                if tap.tappedPID != 0 {
-                    Text("tapping pid \(tap.tappedPID)")
-                }
-                Text(tap.latencyDescription)
+            Spacer(minLength: 6)
+
+            if !tap.enabled {
+                Text("disabled")
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(.red)
             }
-            .font(.caption2)
-            .foregroundStyle(.tertiary)
+
+            Text(tap.latencyDescription)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(tap.enabled ? Color.clear : Color.red.opacity(0.4), lineWidth: 1)
-        )
+        .padding(.vertical, 2)
     }
 }

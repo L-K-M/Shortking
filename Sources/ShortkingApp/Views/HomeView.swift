@@ -177,7 +177,7 @@ struct HomeView: View {
             SummaryCard(
                 title: "Can swallow keys",
                 value: swallowValue,
-                caption: "filtering your keystrokes",
+                caption: swallowCaption,
                 symbol: "eye.fill",
                 colors: Palette.watchers,
                 actionTitle: "Review",
@@ -209,8 +209,16 @@ struct HomeView: View {
     }
 
     private var swallowValue: String {
-        let count = state.tapsThatCanSwallowKeys
+        let count = state.processesThatCanSwallowKeys
         return "\(count) process\(count == 1 ? "" : "es")"
+    }
+
+    /// Says what the number is a fraction *of*, so the card and the Suspects list
+    /// visibly agree instead of quoting two different totals.
+    private var swallowCaption: String {
+        let total = state.tapProcesses.count
+        guard total > 0 else { return "no event taps installed" }
+        return "of \(total) with an event tap"
     }
 
     // MARK: - Sections
