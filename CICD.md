@@ -1,23 +1,33 @@
 # CI/CD
 
 Shortking is a SwiftPM package that builds a macOS `.app` bundle. CI tests and assembles
-the bundle on every change; the release workflow signs it with a Developer ID
-certificate, notarizes it, staples the ticket, and publishes a `.dmg` and `.zip` with
-SHA-256 sums to a GitHub Release.
+the bundle on every change; the release workflow packages a `.dmg` and `.zip` with SHA-256
+sums and publishes them to a GitHub Release.
 
-Unlike the sibling macOS apps (Top Drawer, Zap), **Shortking is never published
-unsigned.** It asks for Accessibility and Input Monitoring, it cannot ship on the Mac App
-Store (per-pid event taps are unsupported under App Sandbox, and it reads other apps'
-preference domains), and Developer ID + notarization is the only channel it has. A tag
-pushed without the signing secrets configured fails the release rather than falling back
-to an ad-hoc build.
+Shortking cannot ship on the Mac App Store — per-pid event taps are unsupported under App
+Sandbox, and it reads other apps' preference domains — so **Developer ID + notarization is
+the channel to aim for**, and an app that asks for Accessibility and Input Monitoring is a
+poor candidate for a Gatekeeper warning. But the release workflow behaves the same way its
+siblings (Top Drawer, Zap, Copywraith) do rather than blocking on a certificate that may
+not exist yet:
+
+| Signing secrets | What the release does |
+| --- | --- |
+| All seven set | Signs with the Developer ID certificate, notarizes, staples, verifies with `spctl`. |
+| None set | Ad-hoc signs (identity `-`), publishes with the Gatekeeper workaround in the notes. |
+| Some set | Fails with the list of missing ones. |
+
+The middle row is the fallback; the last is not a policy, it's a typo guard — a
+half-configured signing setup should not silently degrade to an unsigned build. Configure
+the secrets in the [Secrets](#secrets) table and the next tag upgrades itself to the
+signed path with no workflow change.
 
 ## Workflows
 
 | Workflow | Trigger | Purpose |
 | --- | --- | --- |
 | [`ci.yml`](.github/workflows/ci.yml) | Pull requests, pushes to `main`, manual dispatch | `swift test`, assemble the `.app`, and assert the bundle layout. |
-| [`release.yml`](.github/workflows/release.yml) | Pushing a `v*` tag (e.g. `v1.2.0`) | Re-test the tagged commit, sign, notarize, staple, and publish the GitHub Release. |
+| [`release.yml`](.github/workflows/release.yml) | Pushing a `v*` tag (e.g. `v1.2.0`) | Re-test the tagged commit, build, sign (Developer ID or ad-hoc), and publish the GitHub Release. |
 | [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) | Non-draft PRs from this repository | GLM 5.2 review when `ZAI_API_KEY` is configured. Never runs for fork PRs — `pull_request_target` has access to secrets. |
 
 Both `ci.yml` and `release.yml` run on `macos-14` with **Xcode 16.2** pinned via
@@ -82,36 +92,61 @@ bundle. Always cut releases with `scripts/release.sh` so they stay in step.
 
 The job then:
 
-1. **Validates every signing secret up front** and fails with the list of missing ones.
-   Nothing is built before this passes.
+1. **Resolves the signing path** from the seven secrets — all set, none set, or the
+   partial case that fails. Nothing is built before this passes.
 2. Re-runs `swift test`. A `v*` tag can land on any commit — including one CI never saw.
-3. Imports the Developer ID certificate into a temporary keychain, appended to the search
-   list rather than replacing it (notarization credentials live in the default keychain
-   and must stay reachable). The signing identity is resolved to its SHA-1 with `security
-   find-identity`, so the certificate's common name doesn't have to be a separate secret.
-4. Stores App Store Connect API credentials as a `notarytool` keychain profile.
-5. `make notarize` — which chains `dmg` → `app` → `sign`, so the published artifact is
-   assembled by exactly the same path a maintainer uses locally: the probe helper and the
-   bundle are both signed with the hardened runtime, a secure timestamp and
-   `Resources/Shortking.entitlements`; the DMG is then submitted and the ticket stapled to
-   both the DMG and the `.app`.
-6. Verifies the result the way a user's machine will: `codesign --verify --deep --strict`,
-   an explicit check that the hardened-runtime flag is present (notarization requires it,
-   and a missing one only surfaces as a Gatekeeper rejection later), `stapler validate` on
-   both artifacts, and `spctl --assess --type exec`.
+3. *(signed only)* Imports the Developer ID certificate into a temporary keychain, appended
+   to the search list rather than replacing it (notarization credentials live in the
+   default keychain and must stay reachable). The signing identity is resolved to its SHA-1
+   with `security find-identity`, so the certificate's common name doesn't have to be a
+   separate secret.
+4. *(signed only)* Stores App Store Connect API credentials as a `notarytool` keychain
+   profile.
+5. Builds through the Makefile, so the published artifact is assembled by exactly the same
+   path a maintainer uses locally:
+   - signed: `make notarize`, which chains `dmg` → `app` → `sign`. The probe helper and the
+     bundle are both signed with the hardened runtime, a secure timestamp and
+     `Resources/Shortking.entitlements`; the DMG is submitted and the ticket stapled to
+     both the DMG and the `.app`.
+   - unsigned: `make dmg`, the same chain minus notarization. With `SIGN_IDENTITY` unset
+     the `sign` target ad-hoc signs (identity `-`), which carries no trust but *is*
+     required for the bundle to launch at all on Apple Silicon.
+6. Verifies. Signed, the way a user's machine will: `codesign --verify --deep --strict`, an
+   explicit check that the hardened-runtime flag is present (notarization requires it, and
+   a missing one only surfaces as a Gatekeeper rejection later), `stapler validate` on both
+   artifacts, and `spctl --assess --type exec`. Unsigned, `codesign --verify --deep
+   --strict` alone — an ad-hoc signature can't be stapled or assessed by Gatekeeper, but it
+   still catches a bundle whose helper was staged after signing.
 7. Packages `Shortking-<version>.dmg` and `Shortking-<version>.zip` plus a combined
-   `.sha256` file, and publishes them with auto-generated notes. A tag containing a hyphen
-   (`v1.3.0-rc.1`) is published as a pre-release.
+   `.sha256` file, and publishes them. A tag containing a hyphen (`v1.3.0-rc.1`) is
+   published as a pre-release.
 8. Deletes the signing keychain, whatever happened.
+
+The release notes are generated to match the path that ran, because the two ask completely
+different things of whoever downloads the build: the signed body says it opens without a
+prompt, the unsigned one carries the right-click-Open and `xattr -dr com.apple.quarantine`
+workaround, plus the warning to grant Accessibility and Input Monitoring only *after*
+moving the app to its final location (macOS keys TCC grants to signature and path). Both
+end with the permissions summary and the `shasum -c` line.
 
 The `.zip` is produced with `ditto -c -k --keepParent`, not `zip`: it is the only archiver
 that preserves the bundle's symlinks, resource forks and extended attributes, and
 therefore its signature and stapled ticket.
 
+### Ad-hoc releases and permission grants
+
+An ad-hoc signature's cdhash is derived from the binary, so it is stable for one published
+artifact — a user who grants Accessibility to a downloaded ad-hoc build keeps that grant.
+What they don't get is any continuity across versions: every release is a different app as
+far as TCC is concerned, so each upgrade asks for the permissions again. A Developer ID
+signature is what makes an upgrade an upgrade. That, and the Gatekeeper prompt, is the
+argument for configuring the secrets — not that the fallback is unusable.
+
 ## Secrets
 
-`ci.yml` needs none. `release.yml` requires all seven — these are the family's standard
-names for the signed-macOS path:
+`ci.yml` needs none. `release.yml` takes the signed path when all seven of these are set
+and the ad-hoc path when none of them are — they are the family's standard names for the
+signed-macOS path:
 
 | Secret | What it is |
 | --- | --- |
@@ -130,14 +165,19 @@ or a stray carriage return doesn't fail the release — only genuinely invalid b
 
 ## Troubleshooting
 
-- **`Release signing is not fully configured`** — one of the seven secrets is unset. This
-  is deliberate: see the note at the top. Add the secret and re-push the tag.
+- **`Release signing is partially configured`** — some of the seven secrets are set and
+  some aren't, which is almost always a misspelled secret name. Set the missing ones (or
+  clear the rest to take the ad-hoc path deliberately) and re-push the tag.
+- **A release published unsigned when you expected it signed** — the workflow logs a
+  `::warning::` naming the fallback in the "Resolve the signing path" step. Repository
+  secrets aren't available to workflow runs triggered from a fork, and environment-scoped
+  secrets aren't visible to a job with no `environment:`; check where the secrets live.
 - **`No 'Developer ID Application' identity found`** — the `.p12` holds an *Apple
   Development* certificate, which cannot be notarized. Export a Developer ID Application
   certificate instead.
 - **`the signed bundle does not have the hardened runtime enabled`** — the Makefile's
-  `sign` target lost `--options runtime`, or `SIGN_IDENTITY` was empty and it fell through
-  to the ad-hoc branch.
+  `sign` target lost `--options runtime`. This check only runs on the signed path, so it
+  means the identity resolved but the signing flags didn't.
 - **Notarization rejected** — `xcrun notarytool log <submission-id> --keychain-profile
   shortking-notary` gives the per-binary reason. Usually a nested binary missing the
   hardened runtime or a secure timestamp.

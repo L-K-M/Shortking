@@ -135,8 +135,10 @@ make notarize KEYCHAIN_PROFILE=shortking-notary
 
 Published releases run exactly that path in CI — see [CICD.md](CICD.md). Cut one with
 `scripts/release.sh 1.2.3 --push`, which bumps the version in `Resources/Info.plist`,
-tags `v1.2.3`, and lets the release workflow sign, notarize and publish it. Shortking is
-never published unsigned.
+tags `v1.2.3`, and lets the release workflow build and publish it. With the Developer ID
+secrets configured that is the signed, notarized path above; without them it falls back to
+an ad-hoc signed build that Gatekeeper warns about, and the release notes say which one you
+downloaded.
 
 Shortking **cannot** ship on the Mac App Store: per-pid event taps are explicitly unsupported under
 App Sandbox, and reading other apps' preference domains is restricted. Distribution is Developer ID

@@ -80,10 +80,14 @@ command), and anything the engine itself lacks belongs upstream as a new kind.
 never edit the plist version by hand, and never create a `v*` tag by hand: the
 release workflow refuses a tag that disagrees with the committed version.
 
-CI runs `swift test` and `make app` on a macOS runner. The release workflow signs,
-notarizes, staples, and packages a `.dmg` and `.zip`, publishing them with SHA-256
-sums. Never publish an unsigned application bundle — the release workflow has no
-ad-hoc fallback and fails when the signing secrets are absent.
+CI runs `swift test` and `make app` on a macOS runner. The release workflow packages
+a `.dmg` and `.zip` and publishes them with SHA-256 sums. When the Developer ID
+secrets are configured it signs, notarizes and staples; when none of them are, it
+falls back to an ad-hoc signed build and says so in the release notes, the same as
+Top Drawer and Zap. A *partial* configuration fails the release — that is a
+misconfiguration, not a choice. Developer ID is what Shortking should ship under,
+because an app that asks for Accessibility and Input Monitoring is a poor candidate
+for a Gatekeeper warning; configure the secrets and the next tag upgrades itself.
 
 ## Repository automation
 
@@ -92,10 +96,10 @@ ad-hoc fallback and fails when the signing secrets are absent.
   for fork pull requests because `pull_request_target` has access to secrets.
 - Dependabot covers GitHub Actions updates weekly.
 - `.github/workflows/ci.yml` tests and assembles the bundle on every PR and push
-  to `main`; `.github/workflows/release.yml` signs, notarizes, staples and
-  publishes on a `v*` tag. Both pin Xcode 16.2 — bump the two together, and keep
-  them in step with Top Drawer and Zap. [CICD.md](CICD.md) documents both,
-  including the seven release secrets.
+  to `main`; `.github/workflows/release.yml` builds, signs (Developer ID when the
+  secrets are set, ad-hoc otherwise) and publishes on a `v*` tag. Both pin Xcode
+  16.2 — bump the two together, and keep them in step with Top Drawer and Zap.
+  [CICD.md](CICD.md) documents both, including the seven release secrets.
 
 ## Conventions
 

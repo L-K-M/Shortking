@@ -7,15 +7,20 @@
 #   - asserts the tag matches the committed CFBundleShortVersionString — `make app`
 #     copies Resources/Info.plist verbatim, so a mismatched tag would ship a
 #     release named v1.3.0 containing a 0.1.0 bundle
-#   - requires every Developer ID and notarization secret before building.
-#     Shortking cannot ship on the Mac App Store (per-pid event taps are
-#     unsupported under App Sandbox, and it reads other apps' preference
-#     domains), so Developer ID + notarization is the only distribution channel
-#     it has — and an unsigned build of a tool that asks for Accessibility and
-#     Input Monitoring must never be published. Unlike Top Drawer and Zap, this
-#     workflow has no ad-hoc fallback: missing secrets fail the release.
-#   - signs with the hardened runtime, notarizes, staples, and publishes the
-#     .dmg and .zip with a SHA-256 sum for each
+#   - takes the Developer ID path when the signing secrets are configured: signs
+#     with the hardened runtime, notarizes, staples, and verifies the result the
+#     way a user's machine will
+#   - falls back to an ad-hoc signed, unsigned-for-Gatekeeper build when they are
+#     not, the same as Top Drawer and Zap, so the release channel works before any
+#     certificate exists. The release notes say which of the two it was.
+#   - publishes the .dmg and .zip with a SHA-256 sum for each, either way
+#
+# Shortking cannot ship on the Mac App Store (per-pid event taps are unsupported
+# under App Sandbox, and it reads other apps' preference domains), so Developer ID
+# + notarization is the distribution channel to aim for: an app that asks for
+# Accessibility and Input Monitoring is a poor candidate for a Gatekeeper warning.
+# Configure the secrets in the Secrets table in CICD.md and every subsequent tag
+# upgrades itself to the signed path with no workflow change.
 #
 # Signing and packaging are driven through the Makefile (`make notarize` →
 # dmg → app → sign) so the published artifact is assembled by exactly the same
@@ -40,13 +45,18 @@ env:
 
 jobs:
   release:
-    name: Sign, notarize & publish
+    name: Build & publish
     runs-on: macos-14
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
-      - name: Validate release signing configuration
+      # All seven secrets → Developer ID. None → ad-hoc fallback. *Some* is
+      # neither: it is a half-finished configuration, and silently shipping an
+      # unsigned build because one secret was misspelled is exactly the failure
+      # this step exists to catch.
+      - name: Resolve the signing path
+        id: signing
         env:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -57,6 +67,7 @@ jobs:
           AC_API_ISSUER_ID: ${{ secrets.AC_API_ISSUER_ID }}
         run: |
           set -euo pipefail
+          present=()
           missing=()
           for name in \
             DEVELOPER_ID_P12_BASE64 \
@@ -68,10 +79,19 @@ jobs:
             AC_API_ISSUER_ID; do
             if [ -z "${!name:-}" ]; then
               missing+=("$name")
+            else
+              present+=("$name")
             fi
           done
-          if [ "${#missing[@]}" -ne 0 ]; then
-            echo "::error::Release signing is not fully configured; missing secrets: ${missing[*]}. Shortking is never published unsigned — see CICD.md."
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "All Developer ID secrets present — signing and notarizing."
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          elif [ "${#present[@]}" -eq 0 ]; then
+            echo "::warning::No Developer ID secrets configured; publishing an ad-hoc signed, un-notarized build. Gatekeeper will warn on first launch. See CICD.md to configure signing."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Release signing is partially configured; missing secrets: ${missing[*]}. Set all seven to sign, or none to publish an ad-hoc build."
             exit 1
           fi
 
@@ -95,6 +115,7 @@ jobs:
         run: swift test
 
       - name: Import the Developer ID certificate
+        if: steps.signing.outputs.signed == 'true'
         env:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
@@ -139,6 +160,7 @@ jobs:
           echo "SIGNING_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
       - name: Store notarization credentials
+        if: steps.signing.outputs.signed == 'true'
         env:
           AC_API_KEY_BASE64: ${{ secrets.AC_API_KEY_BASE64 }}
           AC_API_KEY_ID: ${{ secrets.AC_API_KEY_ID }}
@@ -164,6 +186,7 @@ jobs:
       # Resources/Shortking.entitlements; `make notarize` then submits the DMG and
       # staples the ticket to both the DMG and the .app.
       - name: Build, sign, notarize & staple
+        if: steps.signing.outputs.signed == 'true'
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
@@ -173,7 +196,17 @@ jobs:
             TEAM_ID="$APPLE_TEAM_ID" \
             KEYCHAIN_PROFILE="$KEYCHAIN_PROFILE"
 
+      # Same Makefile path minus notarization. With SIGN_IDENTITY unset the `sign`
+      # target ad-hoc signs (identity "-"), which carries no trust but IS required
+      # for the bundle to launch at all on Apple Silicon.
+      - name: Build & ad-hoc sign
+        if: steps.signing.outputs.signed != 'true'
+        run: |
+          set -euo pipefail
+          make dmg
+
       - name: Verify the notarized bundle
+        if: steps.signing.outputs.signed == 'true'
         run: |
           set -euo pipefail
           APP="build/$APP_NAME.app"
@@ -188,8 +221,19 @@ jobs:
           # The real end-user check: Gatekeeper's own verdict on the stapled bundle.
           spctl --assess --type exec --verbose=4 "$APP"
 
+      # An ad-hoc signature can't be assessed by Gatekeeper or stapled, but it can
+      # still be verified for internal consistency — which is what catches a bundle
+      # whose helper was staged after signing.
+      - name: Verify the ad-hoc signed bundle
+        if: steps.signing.outputs.signed != 'true'
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict --verbose=2 "build/$APP_NAME.app"
+
       - name: Package & checksum
         id: package
+        env:
+          SIGNED: ${{ steps.signing.outputs.signed }}
         run: |
           set -euo pipefail
           DIST="$RUNNER_TEMP/dist"
@@ -204,6 +248,46 @@ jobs:
           ( cd "$DIST" && shasum -a 256 ./*.dmg ./*.zip > "$APP_NAME-$VERSION.sha256" )
           echo "dist=$DIST" >> "$GITHUB_OUTPUT"
 
+          # The release notes have to tell the truth about which path ran, because
+          # the two need completely different things from the person downloading.
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          if [ "$SIGNED" = "true" ]; then
+            cat > "$NOTES" <<EOF
+          ### Signed and notarized
+
+          This build is signed with a Developer ID certificate and notarized by
+          Apple, so it opens without a Gatekeeper prompt.
+          EOF
+          else
+            cat > "$NOTES" <<EOF
+          ### Unsigned build
+
+          This build is **not** signed with a Developer ID or notarized, so macOS
+          Gatekeeper will warn on first launch. To open it:
+
+          - **Right-click** (or Control-click) the app → **Open** → **Open**, or
+          - run \`xattr -dr com.apple.quarantine "/Applications/$APP_NAME.app"\`
+
+          Grant Accessibility and Input Monitoring *after* moving the app to its
+          final location: macOS keys those grants to the app's code signature and
+          path, and moving it afterwards invalidates them.
+          EOF
+          fi
+          cat >> "$NOTES" <<EOF
+
+          Shortking needs **Accessibility** (to inventory menu bars) and, for
+          Detective Mode's live capture, **Input Monitoring**. It is a read-only
+          diagnostic: it never rebinds a shortcut, and the only system state it
+          changes — the blackout test — is restored automatically.
+
+          Verify the download against the published \`.sha256\` file:
+
+          \`\`\`
+          shasum -a 256 -c $APP_NAME-$VERSION.sha256
+          \`\`\`
+          EOF
+          echo "notes=$NOTES" >> "$GITHUB_OUTPUT"
+
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
@@ -215,22 +299,7 @@ jobs:
             ${{ steps.package.outputs.dist }}/*.dmg
             ${{ steps.package.outputs.dist }}/*.zip
             ${{ steps.package.outputs.dist }}/*.sha256
-          body: |
-            ### Signed and notarized
-
-            This build is signed with a Developer ID certificate and notarized by
-            Apple, so it opens without a Gatekeeper prompt.
-
-            Shortking needs **Accessibility** (to inventory menu bars) and, for
-            Detective Mode's live capture, **Input Monitoring**. It is a read-only
-            diagnostic: it never rebinds a shortcut, and the only system state it
-            changes — the blackout test — is restored automatically.
-
-            Verify the download against the published `.sha256` file:
-
-            ```
-            shasum -a 256 -c ${{ env.APP_NAME }}-${{ env.VERSION }}.sha256
-            ```
+          body_path: ${{ steps.package.outputs.notes }}
 
       - name: Remove the signing keychain
         if: always()
