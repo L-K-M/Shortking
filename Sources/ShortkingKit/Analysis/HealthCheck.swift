@@ -27,6 +27,8 @@ public struct HealthCheck: Identifiable, Sendable {
         case requestAccessibility
         case revealPath(String)
         case rescan
+        /// Quit and reopen — the fix for a permission that needs a fresh process.
+        case relaunch
         /// Deliberately not spelled `none`, which would read ambiguously against
         /// `Optional.none` at every call site.
         case noAction
@@ -126,19 +128,20 @@ public enum HealthChecker {
             )
         }
 
-        // Functional verification: walk our own menu bar. If the grant has lapsed
-        // after a re-sign, this fails while `AXIsProcessTrusted()` still says yes.
-        let ourPID = ProcessInfo.processInfo.processIdentifier
-        let element = AXBridge.application(pid: ourPID, timeout: 1.0)
-        if AXBridge.menuBar(of: element) == nil {
+        // Functional verification: walk our own menu bar. If the grant was only just
+        // ticked, or lapsed after a re-sign, this fails while `AXIsProcessTrusted()`
+        // still says yes.
+        if !AXBridge.canReadOwnMenuBar() {
             return HealthCheck(
                 id: "accessibility",
                 title: "Accessibility",
                 status: .warning,
                 message: "Granted, but a test menu read returned nothing.",
-                detail: "This usually means the grant lapsed after the app was updated or re-signed. "
-                    + "Remove Shortking from the Accessibility list and add it again.",
-                action: .openSettings(pane: "Privacy_Accessibility")
+                detail: "If you just granted it, relaunch Shortking — macOS caches the decision "
+                    + "for the life of the process. Otherwise the grant has lapsed, which happens "
+                    + "when the app is updated or re-signed; remove Shortking from the "
+                    + "Accessibility list and add it again.",
+                action: .relaunch
             )
         }
 

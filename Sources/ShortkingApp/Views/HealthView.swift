@@ -129,6 +129,9 @@ struct HealthCheckRow: View {
         case .rescan:
             Button("Rescan") { state.rescan() }
                 .controlSize(.small)
+        case .relaunch:
+            Button("Quit and Reopen") { state.relaunch() }
+                .controlSize(.small)
         case .noAction:
             EmptyView()
         }

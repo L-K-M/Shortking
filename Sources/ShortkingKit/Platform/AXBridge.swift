@@ -27,6 +27,19 @@ public enum AXBridge {
         return AXIsProcessTrustedWithOptions(options as CFDictionary)
     }
 
+    /// Functional check: can this process actually read a menu bar right now?
+    ///
+    /// `isTrusted` answers "does TCC have a record for us", which is not the same
+    /// question. The grant can read as `true` while the process still cannot see
+    /// anything — most often just after the user ticks the checkbox, because macOS
+    /// caches the decision for the lifetime of the process. Onboarding and Health
+    /// both gate on this rather than on the permission bit.
+    public static func canReadOwnMenuBar() -> Bool {
+        guard isTrusted else { return false }
+        let element = application(pid: ProcessInfo.processInfo.processIdentifier, timeout: 1.0)
+        return menuBar(of: element) != nil
+    }
+
     /// An application element with a bounded messaging timeout.
     public static func application(pid: pid_t, timeout: Float = 0.25) -> AXUIElement {
         let element = AXUIElementCreateApplication(pid)

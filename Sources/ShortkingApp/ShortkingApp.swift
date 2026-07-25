@@ -12,6 +12,13 @@ struct ShortkingApp: App {
         }
         .windowToolbarStyle(.unified)
         .commands {
+            // Reachable from anywhere, not just onboarding: a permission grant made
+            // while Shortking is running needs a fresh process before it takes
+            // effect, and that shouldn't require hunting for the right screen.
+            CommandGroup(after: .appInfo) {
+                Button("Quit and Reopen") { state.relaunch() }
+            }
+
             CommandGroup(after: .toolbar) {
                 Button("Rescan") { state.rescan() }
                     .keyboardShortcut("r", modifiers: .command)

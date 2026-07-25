@@ -283,6 +283,49 @@ final class AppState: ObservableObject {
         AXBridge.requestTrust()
     }
 
+    /// Whether Accessibility is granted *and* actually works.
+    ///
+    /// `AXIsProcessTrusted()` can flip to `true` the moment the grant lands while
+    /// the process still cannot read anything, so onboarding waits on a real menu
+    /// read rather than on the permission bit.
+    var accessibilityWorks: Bool {
+        AXBridge.canReadOwnMenuBar()
+    }
+
+    func quit() {
+        NSApp.terminate(nil)
+    }
+
+    /// Quits and reopens the app.
+    ///
+    /// macOS caches a process's Accessibility decision, so a grant made while
+    /// Shortking is running often does not take effect until it restarts. Telling
+    /// the user to quit and relaunch without giving them a way to do it — which is
+    /// what the first version of onboarding did — is not acceptable.
+    func relaunch() {
+        let path = Bundle.main.bundlePath
+        guard path.hasSuffix(".app") else {
+            // Running as a bare executable: there is no bundle to reopen, so a
+            // relaunch would just quit. Say so instead of silently terminating.
+            Log.ui.warning("Relaunch requested but not running from an app bundle")
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        // The delay lets this process exit first, so `open` does not simply
+        // reactivate the instance that is on its way out.
+        process.arguments = ["-c", "sleep 1; /usr/bin/open \"\(path)\""]
+
+        do {
+            try process.run()
+        } catch {
+            Log.ui.error("Failed to schedule relaunch: \(error.localizedDescription)")
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
     func openSettingsPane(_ pane: String) {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")
         if let url { NSWorkspace.shared.open(url) }
