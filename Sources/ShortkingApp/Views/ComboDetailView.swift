@@ -56,7 +56,7 @@ struct ComboDetailView: View {
 
     private var claimsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("\(group.claims.count) claim(s)")
+            Text(Plural.count(group.claims.count, "claim"))
                 .font(.headline)
 
             ForEach(group.claims) { claim in

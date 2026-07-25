@@ -189,7 +189,7 @@ struct StatusBar: View {
                     state.destination = .health
                 } label: {
                     Label(
-                        "\(state.result.warnings.count) source(s) incomplete",
+                        Plural.count(state.result.warnings.count, "source") + " incomplete",
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(.caption)
