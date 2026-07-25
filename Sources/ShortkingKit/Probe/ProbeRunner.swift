@@ -131,10 +131,24 @@ public final class ProbeRunner: @unchecked Sendable {
         }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: watchdog)
 
+        // Both pipes have to be drained *concurrently*. Reading stdout to EOF and
+        // only then reading stderr means that a helper which fills stderr's 64 KB
+        // buffer blocks writing while we block reading, and neither side moves
+        // again. The helper is quiet on stderr today — but `--help`, the watchdog
+        // message and any encoding failure all write there, and a pipe-ordering
+        // deadlock is exactly the kind of bug that only shows up in the field.
+        let errorBox = DataBox()
+        let errorHandle = stderr.fileHandleForReading
+        let errorQueue = DispatchQueue(label: "com.shortking.probe.stderr")
+        errorQueue.async { errorBox.data = errorHandle.readDataToEndOfFile() }
+
         let outputData = stdout.fileHandleForReading.readDataToEndOfFile()
-        let errorData = stderr.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
         watchdog.cancel()
+
+        // Barrier: guarantees the stderr read finished and its write is visible.
+        errorQueue.sync {}
+        let errorData = errorBox.data
 
         guard process.terminationStatus == 0 else {
             let message = String(data: errorData, encoding: .utf8) ?? ""
@@ -151,6 +165,12 @@ public final class ProbeRunner: @unchecked Sendable {
         } catch {
             throw ProbeUnavailable.malformedOutput(error.localizedDescription)
         }
+    }
+
+    /// A reference box, so the two pipe reads can run concurrently without a
+    /// captured `var` — which a `@Sendable` dispatch block may not mutate.
+    private final class DataBox: @unchecked Sendable {
+        var data = Data()
     }
 
     /// Decodes the `keyCode:modifierRawValue` list the helper accepts.

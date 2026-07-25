@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 
 /// Turning pids into something a human can read.
@@ -51,6 +52,10 @@ public enum ProcessLookup {
 /// Used only for things macOS exposes nowhere else: `ioreg` for the secure-input
 /// holder and `nm` for static binary triage.
 public enum Shell {
+
+    /// How long to wait after SIGTERM before resorting to SIGKILL.
+    private static let terminationGrace: TimeInterval = 2
+
     public static func run(_ launchPath: String, arguments: [String], timeout: TimeInterval = 10) -> String? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: launchPath)
@@ -67,18 +72,36 @@ public enum Shell {
             return nil
         }
 
+        // The watchdog has to be armed *before* the read, not after it.
+        //
+        // `readDataToEndOfFile()` returns only when the child closes stdout — which
+        // is to say, when it exits. The old code did the read first and then polled
+        // `process.isRunning` against a deadline, so the deadline could never be
+        // reached while the child was still running and the `timeout` parameter was
+        // decorative. A wedged `nm` or `ioreg` blocked the caller forever, inside a
+        // scan whose own per-source timeout cannot cancel blocking work.
+        let terminate = DispatchWorkItem {
+            guard process.isRunning else { return }
+            Log.platform.warning("Timed out waiting for \(launchPath); terminating")
+            process.terminate()
+        }
+        let forceKill = DispatchWorkItem {
+            guard process.isRunning else { return }
+            Log.platform.error("\(launchPath) ignored SIGTERM; killing")
+            kill(process.processIdentifier, SIGKILL)
+        }
+
+        let queue = DispatchQueue.global(qos: .utility)
+        queue.asyncAfter(deadline: .now() + timeout, execute: terminate)
+        queue.asyncAfter(deadline: .now() + timeout + terminationGrace, execute: forceKill)
+
         // Read before waiting: a full pipe buffer deadlocks a process that is still
         // writing while we wait for it to exit.
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
 
-        let deadline = Date().addingTimeInterval(timeout)
-        while process.isRunning && Date() < deadline {
-            usleep(20_000)
-        }
-        if process.isRunning {
-            process.terminate()
-            Log.platform.warning("Timed out waiting for \(launchPath)")
-        }
+        terminate.cancel()
+        forceKill.cancel()
 
         return String(data: data, encoding: .utf8)
     }

@@ -28,9 +28,14 @@ watchdog.start()
 
 // Exiting on a signal drops every registration with it. `SIG_DFL` would too, but
 // being explicit documents the intent.
+//
+// `_exit`, not `exit`: `exit` runs atexit handlers and flushes stdio, neither of
+// which is async-signal-safe, and this handler runs at exactly the moment we most
+// need to be sure the process actually dies. The kernel releases the hotkey
+// registrations either way.
 for signalNumber in [SIGINT, SIGTERM, SIGHUP] {
     signal(signalNumber) { _ in
-        exit(2)
+        _exit(2)
     }
 }
 
