@@ -1,6 +1,6 @@
 # Shortking
 
-**Source version:** v<!-- version -->0.2.0<!-- /version --> (no packaged GitHub Release is currently published)
+**Latest release:** v<!-- version -->0.2.0<!-- /version --> · [Download](https://github.com/L-K-M/Shortking/releases/latest)
 
 > [!IMPORTANT]
 > LLM Disclosure: Shortking was built with substantial help from large language models — primarily Anthropic's Claude, via Claude Code. Much of the code arrived through AI-authored commits and `claude/*` pull-request branches, with agent guidance kept in [`AGENTS.md`](AGENTS.md)
