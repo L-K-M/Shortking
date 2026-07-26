@@ -2,8 +2,11 @@
 # Regenerates Resources/AppIcon.icns from the 1024x1024 master Resources/AppIcon.png.
 #
 # The .icns is checked in so `make app` never needs image tooling; run this only
-# when the icon artwork changes. (Resources/AppIcon.svg is the vector source —
-# re-render it to AppIcon.png first if that's what changed.)
+# when the icon artwork changes. The artwork's source of truth is
+# media-sources/icon.png — if that changed, regenerate the master first:
+#   python3 -c "from PIL import Image; Image.open('media-sources/icon.png') \
+#     .convert('RGBA').resize((1024,1024), Image.LANCZOS) \
+#     .save('Resources/AppIcon.png', optimize=True)"
 #
 # On macOS this uses sips + iconutil, the canonical pipeline. Elsewhere it falls
 # back to scripts/png2icns.py, which needs python3 + Pillow.
