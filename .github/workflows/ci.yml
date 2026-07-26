@@ -60,7 +60,8 @@ jobs:
             "$APP/Contents/MacOS/Shortking" \
             "$APP/Contents/MacOS/shortking-probe" \
             "$APP/Contents/Info.plist" \
-            "$APP/Contents/PkgInfo"; do
+            "$APP/Contents/PkgInfo" \
+            "$APP/Contents/Resources/AppIcon.icns"; do
             [ -f "$f" ] || { echo "::error::assembled bundle is missing $f"; exit 1; }
           done
           codesign --verify --strict --verbose=2 "$APP"

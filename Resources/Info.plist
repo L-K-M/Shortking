@@ -8,6 +8,8 @@
 	<string>Shortking</string>
 	<key>CFBundleExecutable</key>
 	<string>Shortking</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.shortking.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
