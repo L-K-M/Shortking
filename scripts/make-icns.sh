@@ -18,8 +18,10 @@ OUT="Resources/AppIcon.icns"
 
 [ -f "$MASTER" ] || { echo "!! missing $MASTER" >&2; exit 1; }
 
-if command -v iconutil >/dev/null 2>&1; then
-  ICONSET="$(mktemp -d)/AppIcon.iconset"
+if command -v iconutil >/dev/null 2>&1 && command -v sips >/dev/null 2>&1; then
+  TMPDIR_ICONSET="$(mktemp -d)"
+  trap 'rm -rf "$TMPDIR_ICONSET"' EXIT
+  ICONSET="$TMPDIR_ICONSET/AppIcon.iconset"
   mkdir -p "$ICONSET"
   for px in 16 32 128 256 512; do
     sips -z "$px" "$px" "$MASTER" --out "$ICONSET/icon_${px}x${px}.png" >/dev/null
@@ -27,7 +29,6 @@ if command -v iconutil >/dev/null 2>&1; then
     sips -z "$px2" "$px2" "$MASTER" --out "$ICONSET/icon_${px}x${px}@2x.png" >/dev/null
   done
   iconutil -c icns "$ICONSET" -o "$OUT"
-  rm -rf "$(dirname "$ICONSET")"
   echo "wrote $OUT (iconutil)"
 else
   python3 scripts/png2icns.py "$MASTER" "$OUT"
