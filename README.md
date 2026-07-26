@@ -1,5 +1,12 @@
 # Shortking
 
+**Source version:** v<!-- version -->0.1.0<!-- /version --> (no packaged GitHub Release is currently published)
+
+> [!IMPORTANT]
+> LLM Disclosure: Shortking was built with substantial help from large language models — primarily Anthropic's Claude, via Claude Code. Much of the code arrived through AI-authored commits and `claude/*` pull-request branches, with agent guidance kept in [`AGENTS.md`](AGENTS.md)
+
+![Screenshot showing Shortking's main screen](screenshot.png)
+
 **The king of shortcuts.** A macOS diagnostic tool that answers two questions:
 
 1. **What key combinations are currently claimed on this machine, by whom, and at what layer?**
@@ -9,11 +16,6 @@ Shortking is a *diagnostic*, not a shortcut manager. It never rebinds anything o
 only system state it changes is transient and always restored.
 
 [![CI](https://github.com/L-K-M/Shortking/actions/workflows/ci.yml/badge.svg)](https://github.com/L-K-M/Shortking/actions/workflows/ci.yml)
-
-**Source version:** v<!-- version -->0.1.0<!-- /version --> (no packaged GitHub Release is currently published)
-
-> [!IMPORTANT]
-> LLM Disclosure: Shortking was built with substantial help from large language models — primarily Anthropic's Claude, via Claude Code. Much of the code arrived through AI-authored commits and `claude/*` pull-request branches, with agent guidance kept in [`AGENTS.md`](AGENTS.md)
 
 ---
 
@@ -27,16 +29,6 @@ event taps register *nothing* — there is no system state to read.
 Every existing tool responds to this by silently omitting what it cannot see. Shortking does the
 opposite: it makes "claimed, owner unknown" a first-class, visible state, and then offers to find
 out who the owner is.
-
-| | Other tools | Shortking |
-|---|---|---|
-| Menu shortcuts of running apps | ✅ | ✅ |
-| macOS system shortcuts | ✅ | ✅ (plist **and** live) |
-| Karabiner / skhd / VS Code configs | ✅ | ✅ |
-| Hotkeys registered inside WindowServer | ❌ invisible | ✅ detected by probing |
-| Naming the owner of those | ❌ | ✅ live capture, or learned over time |
-| Processes that can swallow keys | ❌ | ✅ suspect list |
-| Non-conflict causes (secure input, ⌥ hardening, dead taps) | ❌ | ✅ |
 
 ## What it reads
 
@@ -54,7 +46,7 @@ out who the owner is.
 - **Installed app binaries** (`nm -u`) — which apps can claim a global hotkey at all, including
   apps that are not running.
 
-## What it infers, and how honestly
+## What it infers
 
 Every binding carries an explicit **layer**, **status** and **confidence**. Nothing inferred is ever
 rendered as a fact.
@@ -155,55 +147,3 @@ plus notarization.
 The Health screen verifies permissions *functionally* rather than just asking the system, because
 `AXIsProcessTrusted()` can return `true` for a binary with no grant of its own, and event taps can
 be created successfully and then never fire after a code-signature change.
-
-## Adding a config adapter
-
-Adapters are a filter-list, not a release. Conform to `ConfigAdapter`, return the paths that exist
-on disk and the bindings you parse out of them, and add it to
-`AdapterRegistry.defaultAdapters()`:
-
-```swift
-public final class MyToolAdapter: ConfigAdapter {
-    public let identifier = "mytool"
-    public let displayName = "My Tool"
-    public let layer: ClaimLayer = .sessionTap   // or .windowServer, .virtualHID…
-    public let ownerName = "My Tool"
-    public let ownerBundleID: String? = "com.example.mytool"
-
-    public func detectedPaths() -> [String] {
-        existing([Self.home(".config/mytool/config.json")])
-    }
-
-    public func parse(path: String) throws -> [ParsedBinding] { … }
-}
-```
-
-Pick the layer honestly — it determines who wins a conflict, so a tool that pattern-matches in an
-event tap is `.sessionTap`, not `.windowServer`, even though both feel "global".
-
-## Project layout
-
-```
-PLAN.md                 the full UI and implementation plan
-Sources/ShortkingKit/   model, sources, adapters, probe, attribution, detective, analysis
-Sources/ShortkingApp/   the SwiftUI app
-Sources/ShortkingProbe/ the short-lived probe helper
-Tests/                  parser, conflict, confidence and classification tests
-```
-
-## Status
-
-The inventory, conflict analysis, probing, suspects, health checks, differential attribution and
-Detective Mode are implemented. Two behaviours are verified at runtime rather than assumed, because
-they change between macOS releases:
-
-- **Is duplicate hotkey registration refused?** Measured on every scan. If this machine permits it,
-  the probe map is *hidden* rather than shown wrongly, and Health says so.
-- **Do per-pid taps observe WindowServer hotkey delivery?** If live capture returns nothing,
-  Shortking falls back to the sandwich taps, differential learning, and side-channel correlation.
-
-Re-run both against every new macOS major version. See `PLAN.md` §18.
-
-## License
-
-See `LICENSE`.

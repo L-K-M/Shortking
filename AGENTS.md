@@ -5,6 +5,55 @@ the machine and answers "who ate my shortcut?" via guided investigation. Read
 [PLAN.md](PLAN.md) for the full design; [README.md](README.md) for building,
 permissions, and distribution.
 
+## Adding a config adapter
+
+Adapters are a filter-list, not a release. Conform to `ConfigAdapter`, return the paths that exist
+on disk and the bindings you parse out of them, and add it to
+`AdapterRegistry.defaultAdapters()`:
+
+```swift
+public final class MyToolAdapter: ConfigAdapter {
+    public let identifier = "mytool"
+    public let displayName = "My Tool"
+    public let layer: ClaimLayer = .sessionTap   // or .windowServer, .virtualHID…
+    public let ownerName = "My Tool"
+    public let ownerBundleID: String? = "com.example.mytool"
+
+    public func detectedPaths() -> [String] {
+        existing([Self.home(".config/mytool/config.json")])
+    }
+
+    public func parse(path: String) throws -> [ParsedBinding] { … }
+}
+```
+
+Pick the layer honestly — it determines who wins a conflict, so a tool that pattern-matches in an
+event tap is `.sessionTap`, not `.windowServer`, even though both feel "global".
+
+## Project layout
+
+```
+PLAN.md                 the full UI and implementation plan
+Sources/ShortkingKit/   model, sources, adapters, probe, attribution, detective, analysis
+Sources/ShortkingApp/   the SwiftUI app
+Sources/ShortkingProbe/ the short-lived probe helper
+Tests/                  parser, conflict, confidence and classification tests
+```
+
+## Status
+
+The inventory, conflict analysis, probing, suspects, health checks, differential attribution and
+Detective Mode are implemented. Two behaviours are verified at runtime rather than assumed, because
+they change between macOS releases:
+
+- **Is duplicate hotkey registration refused?** Measured on every scan. If this machine permits it,
+  the probe map is *hidden* rather than shown wrongly, and Health says so.
+- **Do per-pid taps observe WindowServer hotkey delivery?** If live capture returns nothing,
+  Shortking falls back to the sandwich taps, differential learning, and side-channel correlation.
+
+Re-run both against every new macOS major version. See `PLAN.md` §18.
+
+
 ## Current status
 
 - The app is a working SwiftUI GUI with a bundled CLI probe helper.
