@@ -93,13 +93,33 @@ public final class ServicesScanner: ClaimSource {
 
 /// Input source switching bindings.
 ///
-/// Also mirrored in symbolic hotkeys 59–61; we read the HIToolbox domain as well
-/// because the two can disagree, and because it names the input sources involved.
+/// These live in symbolic hotkeys 59–61, which ``SymbolicHotKeyScanner`` already
+/// sweeps. This source exists to add what that sweep cannot see: how many input
+/// sources are actually enabled, and which kinds — because a switching binding that
+/// does nothing is usually a machine with only one source installed, and that is a
+/// genuinely confusing "my shortcut is broken" cause.
+///
+/// **It must not mint claims of its own.** It used to, at `layer: .inputSource` with
+/// owner `com.apple.HIToolbox`, while the symbolic scanner emitted the same
+/// combination at `layer: .symbolic` with owner `com.apple.symbolichotkeys`.
+/// Different owner identity means a different ``Claim/identity``, so the merger kept
+/// both, and `ConflictAnalyzer` — seeing two global claims at two different layers —
+/// reported a `shadowed` conflict: *Input Sources holds ⌃Space at the Symbolic
+/// layer … Input Sources claims it at the Input source layer, so it never fires.*
+/// Every Mac with a second keyboard layout got one or two fabricated conflicts.
+///
+/// So the claims built here are deliberately identical to the symbolic scanner's —
+/// same layer, same owner, same label, via ``SymbolicHotKeyCatalog`` — and carry only
+/// the extra evidence. `ClaimMerger` folds the two into one record with both pieces
+/// of evidence attached, which is what was wanted in the first place.
 public final class InputSourceScanner: ClaimSource {
 
     public let identifier = "input-sources"
     public let displayName = "Input sources"
     public let requirement: ScanRequirement = .fileAccess
+
+    /// The symbolic hotkey IDs that switch input sources.
+    static let switchingHotKeyIDs: [Int32] = [59, 60, 61]
 
     public init() {}
 
@@ -111,19 +131,19 @@ public final class InputSourceScanner: ClaimSource {
         let path = NSHomeDirectory() + "/Library/Preferences/com.apple.HIToolbox.plist"
         guard let root = NSDictionary(contentsOfFile: path) as? [String: Any] else { return [] }
 
-        var claims: [Claim] = []
-
         // The enabled input sources themselves are not shortcuts, but the count
-        // matters: switching bindings only fire when more than one source exists,
-        // which is a real and confusing "my shortcut does nothing" cause.
+        // matters: switching bindings only fire when more than one source exists.
         let sources = (root["AppleEnabledInputSources"] as? [[String: Any]]) ?? []
-        let sourceNames = sources.compactMap { $0["InputSourceKind"] as? String }
-
         guard sources.count > 1 else { return [] }
 
-        // Symbolic hotkeys 60/61 carry the actual bindings; we attach the names
-        // here so the inventory can say *what* it switches between.
-        for id in Int32(60)...Int32(61) {
+        // `KeyboardLayout Name` is the human-facing one ("German", "ABC"); the older
+        // `InputSourceKind` only ever says "Keyboard Layout", which named nothing.
+        let sourceNames = sources.compactMap { entry -> String? in
+            (entry["KeyboardLayout Name"] as? String) ?? (entry["InputSourceKind"] as? String)
+        }
+
+        var claims: [Claim] = []
+        for id in Self.switchingHotKeyIDs {
             guard let value = SkyLight.shared.symbolicHotKey(id: id) else { continue }
             guard value.virtualKeyCode != 0xFFFF else { continue }
             let combo = KeyCombo(
@@ -133,28 +153,55 @@ public final class InputSourceScanner: ClaimSource {
             guard !combo.isBare else { continue }
 
             claims.append(
-                Claim(
+                Self.enrichment(
+                    id: id,
                     combo: combo,
-                    layer: .inputSource,
-                    status: .known,
-                    owner: Owner(name: "Input Sources", bundleID: "com.apple.HIToolbox", kind: .inputMethod),
-                    label: id == 60 ? "Select the previous input source" : "Select the next input source",
                     enabled: value.enabled,
-                    evidence: [
-                        Evidence(
-                            kind: .inputSource,
-                            summary: "\(sources.count) input sources enabled",
-                            detail: [
-                                "path": path,
-                                "symbolicHotKeyID": "\(id)",
-                                "inputSourceKinds": sourceNames.joined(separator: ", "),
-                            ]
-                        )
-                    ]
+                    sourceCount: sources.count,
+                    sourceNames: sourceNames,
+                    path: path
                 )
             )
         }
 
         return claims
+    }
+
+    /// A claim shaped to merge into the symbolic scanner's, carrying the input-source
+    /// names as extra evidence.
+    ///
+    /// Layer, owner and label all come from ``SymbolicHotKeyCatalog`` so that this
+    /// and ``SymbolicHotKeyScanner`` produce the same ``Claim/identity``. If they
+    /// ever diverge, one shortcut becomes two claimants and the analyzer reports a
+    /// conflict that does not exist — see the type documentation.
+    static func enrichment(
+        id: Int32,
+        combo: KeyCombo,
+        enabled: Bool,
+        sourceCount: Int,
+        sourceNames: [String],
+        path: String
+    ) -> Claim {
+        Claim(
+            combo: combo,
+            layer: .symbolic,
+            status: .known,
+            owner: SymbolicHotKeyCatalog.owner(for: id),
+            label: SymbolicHotKeyCatalog.label(for: id),
+            enabled: enabled,
+            evidence: [
+                Evidence(
+                    kind: .inputSource,
+                    summary: sourceCount == 1
+                        ? "1 input source enabled"
+                        : "\(sourceCount) input sources enabled",
+                    detail: [
+                        "path": path,
+                        "symbolicHotKeyID": "\(id)",
+                        "inputSources": sourceNames.joined(separator: ", "),
+                    ]
+                )
+            ]
+        )
     }
 }

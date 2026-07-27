@@ -64,13 +64,11 @@ public enum ClaimMerger {
         }
 
         for probeResult in report.claimed {
-            let candidates = (indicesByCombo[probeResult.combo] ?? []).filter { index in
-                // Only layers that actually register with WindowServer can cause a
-                // registration to be refused. A skhd binding at the session-tap
-                // layer does not, so it must not absorb this evidence.
-                let layer = result[index].layer
-                return layer == .windowServer || layer == .symbolic
-            }
+            let candidates = Self.registeringClaimIndices(
+                on: probeResult.combo,
+                in: result,
+                indicesByCombo: indicesByCombo
+            )
 
             let evidence = Evidence(
                 kind: .probeExclusionFailure,
@@ -103,10 +101,54 @@ public enum ClaimMerger {
             }
         }
 
-        // Restricted results are not conflicts, but they *are* answers: a shortcut
-        // that stopped working after the upgrade is explained by this, so it is
-        // recorded against the combination without ever becoming a claim.
+        // Restricted results are not conflicts, but they *are* answers: "my ⌥⇧O
+        // shortcut stopped working after I upgraded" is explained entirely by this.
+        // So the refusal is attached to whatever already claims the combination —
+        // the app believes it holds the shortcut, macOS refuses to give it — without
+        // ever becoming a claim of its own, because nobody holds a restricted combo.
+        for probeResult in report.restricted {
+            let evidence = Evidence(
+                kind: .probeExclusionFailure,
+                summary: "Refused by the macOS Option-key restriction (\(probeResult.status))",
+                detail: [
+                    "status": "\(probeResult.status)",
+                    "meaning": "Since macOS 15, shortcuts whose only modifiers are ⌥ or ⌥⇧ are "
+                        + "refused system-wide as an anti-keylogging measure. No app can register "
+                        + "this combination, so this is not a conflict — and rebinding the other "
+                        + "claimant will not help.",
+                ]
+            )
+            let key = evidence.factKey
+            let candidates = Self.registeringClaimIndices(
+                on: probeResult.combo,
+                in: result,
+                indicesByCombo: indicesByCombo
+            )
+
+            for index in candidates
+            where !result[index].evidence.contains(where: { $0.factKey == key }) {
+                result[index].evidence.append(evidence)
+            }
+        }
+
         return result
+    }
+
+    /// Claims on `combo` that could plausibly have caused — or been affected by — a
+    /// registration outcome.
+    ///
+    /// Only layers that actually register with WindowServer qualify. A skhd binding
+    /// at the session-tap layer registers nothing, so it can neither cause a refusal
+    /// nor be explained by one, and must not absorb the evidence.
+    private static func registeringClaimIndices(
+        on combo: KeyCombo,
+        in claims: [Claim],
+        indicesByCombo: [KeyCombo: [Int]]
+    ) -> [Int] {
+        (indicesByCombo[combo] ?? []).filter { index in
+            let layer = claims[index].layer
+            return layer == .windowServer || layer == .symbolic
+        }
     }
 
     /// Groups claims by combination, discarding capability records (which have no

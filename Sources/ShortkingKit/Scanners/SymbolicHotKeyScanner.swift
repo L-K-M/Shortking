@@ -156,11 +156,7 @@ public final class SymbolicHotKeyScanner: ClaimSource {
             combo: combo,
             layer: .symbolic,
             status: .known,
-            owner: Owner(
-                name: SymbolicHotKeyCatalog.owner(for: id),
-                bundleID: "com.apple.symbolichotkeys",
-                kind: .system
-            ),
+            owner: SymbolicHotKeyCatalog.owner(for: id),
             label: SymbolicHotKeyCatalog.label(for: id),
             enabled: enabled,
             evidence: [
@@ -271,12 +267,20 @@ public enum SymbolicHotKeyCatalog {
         190: "Screenshot and recording options",
     ]
 
+    /// The preference domain every symbolic hotkey belongs to.
+    ///
+    /// Shared rather than spelled out at each site, because it is half of a symbolic
+    /// claim's ``Claim/identity``: any source describing the same hotkey has to
+    /// produce the same owner identity or the merger sees two claimants where there
+    /// is one. See ``owner(for:)``.
+    public static let bundleID = "com.apple.symbolichotkeys"
+
     public static func label(for id: Int32) -> String {
         labels[id] ?? "System shortcut \(id)"
     }
 
     /// Which part of macOS owns an ID, where it is meaningful to distinguish.
-    public static func owner(for id: Int32) -> String {
+    public static func ownerName(for id: Int32) -> String {
         switch id {
         case 64, 65: return "Spotlight"
         case 32, 33, 34, 36, 37, 79...86, 118...121: return "Mission Control"
@@ -285,5 +289,16 @@ public enum SymbolicHotKeyCatalog {
         case 59...61: return "Input Sources"
         default: return "macOS"
         }
+    }
+
+    /// The canonical owner for a symbolic hotkey ID.
+    ///
+    /// Every source that describes a symbolic hotkey must build its claim through
+    /// this, so that two sources describing the same hotkey produce the same
+    /// ``Claim/identity`` and merge into one record. `InputSourceScanner` used to
+    /// mint its own owner at a different layer, and the analyzer duly reported
+    /// ⌃Space as shadowing itself on every Mac with two input sources.
+    public static func owner(for id: Int32) -> Owner {
+        Owner(name: ownerName(for: id), bundleID: bundleID, kind: .system)
     }
 }
