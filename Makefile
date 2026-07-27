@@ -63,6 +63,7 @@ app: build
 		echo "error: could not find the probe helper in $(BUILD_DIR)"; exit 1; \
 	fi
 	@cp Resources/Info.plist "$(CONTENTS)/Info.plist"
+	@cp Resources/AppIcon.icns "$(CONTENTS)/Resources/AppIcon.icns"
 	@if [ -d "$(BUILD_DIR)/$(APP_NAME)_$(APP_NAME).bundle" ]; then \
 		cp -R "$(BUILD_DIR)/$(APP_NAME)_$(APP_NAME).bundle" "$(CONTENTS)/Resources/"; \
 	fi
