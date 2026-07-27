@@ -4,39 +4,41 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Shortking</string>
 	<key>CFBundleExecutable</key>
 	<string>Shortking</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.shortking.app</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>Shortking</string>
-	<key>CFBundleDisplayName</key>
-	<string>Shortking</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>0.1.0</string>
+	<string>1.0.1</string>
 	<key>CFBundleVersion</key>
-	<string>1</string>
-	<key>LSMinimumSystemVersion</key>
-	<string>14.0</string>
+	<string>4</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.developer-tools</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>NSAccessibilityUsageDescription</key>
+	<string>Shortking reads the menu bars of running applications to inventory their keyboard shortcuts. It never activates a menu item.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Shortking does not send Apple Events. This entry exists only so macOS can describe the app accurately.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSHumanReadableCopyright</key>
+	<string>Shortking is a diagnostic tool. It never changes your shortcuts.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<true/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
-	<key>NSHumanReadableCopyright</key>
-	<string>Shortking is a diagnostic tool. It never changes your shortcuts.</string>
-	<key>NSAccessibilityUsageDescription</key>
-	<string>Shortking reads the menu bars of running applications to inventory their keyboard shortcuts. It never activates a menu item.</string>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Shortking does not send Apple Events. This entry exists only so macOS can describe the app accurately.</string>
 </dict>
 </plist>
