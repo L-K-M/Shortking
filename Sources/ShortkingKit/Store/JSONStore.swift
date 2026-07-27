@@ -37,13 +37,22 @@ public final class JSONStore<Value: Codable>: @unchecked Sendable {
 
     private let url: URL
     private let lock = NSLock()
+    private let outputFormatting: JSONEncoder.OutputFormatting
 
-    public init(filename: String) {
+    /// - Parameter prettyPrinted: Whether to lay the file out for a human.
+    ///
+    ///   True for the files "Reveal data folder" invites the user to read — settings
+    ///   and the attribution ledger. False for the machine-read caches, where pretty
+    ///   printing roughly doubles the byte count and sorting every key on every write
+    ///   buys nothing.
+    public init(filename: String, prettyPrinted: Bool = true) {
         self.url = StoreLocation.url(for: filename)
+        self.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : []
     }
 
-    public init(url: URL) {
+    public init(url: URL, prettyPrinted: Bool = true) {
         self.url = url
+        self.outputFormatting = prettyPrinted ? [.prettyPrinted, .sortedKeys] : []
     }
 
     public var fileURL: URL { url }
@@ -77,7 +86,7 @@ public final class JSONStore<Value: Codable>: @unchecked Sendable {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.outputFormatting = outputFormatting
 
         let envelope = Envelope(
             schemaVersion: Self.currentSchemaVersion,
