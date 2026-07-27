@@ -5,14 +5,64 @@ the machine and answers "who ate my shortcut?" via guided investigation. Read
 [PLAN.md](PLAN.md) for the full design; [README.md](README.md) for building,
 permissions, and distribution.
 
+## Adding a config adapter
+
+Adapters are a filter-list, not a release. Conform to `ConfigAdapter`, return the paths that exist
+on disk and the bindings you parse out of them, and add it to
+`AdapterRegistry.defaultAdapters()`:
+
+```swift
+public final class MyToolAdapter: ConfigAdapter {
+    public let identifier = "mytool"
+    public let displayName = "My Tool"
+    public let layer: ClaimLayer = .sessionTap   // or .windowServer, .virtualHID…
+    public let ownerName = "My Tool"
+    public let ownerBundleID: String? = "com.example.mytool"
+
+    public func detectedPaths() -> [String] {
+        existing([Self.home(".config/mytool/config.json")])
+    }
+
+    public func parse(path: String) throws -> [ParsedBinding] { … }
+}
+```
+
+Pick the layer honestly — it determines who wins a conflict, so a tool that pattern-matches in an
+event tap is `.sessionTap`, not `.windowServer`, even though both feel "global".
+
+## Project layout
+
+```
+PLAN.md                 the full UI and implementation plan
+Sources/ShortkingKit/   model, sources, adapters, probe, attribution, detective, analysis
+Sources/ShortkingApp/   the SwiftUI app
+Sources/ShortkingProbe/ the short-lived probe helper
+Tests/                  parser, conflict, confidence and classification tests
+```
+
+## Status
+
+The inventory, conflict analysis, probing, suspects, health checks, differential attribution and
+Detective Mode are implemented. Two behaviours are verified at runtime rather than assumed, because
+they change between macOS releases:
+
+- **Is duplicate hotkey registration refused?** Measured on every scan. If this machine permits it,
+  the probe map is *hidden* rather than shown wrongly, and Health says so.
+- **Do per-pid taps observe WindowServer hotkey delivery?** If live capture returns nothing,
+  Shortking falls back to the sandwich taps, differential learning, and side-channel correlation.
+
+Re-run both against every new macOS major version. See `PLAN.md` §18.
+
+
 ## Current status
 
 - The app is a working SwiftUI GUI with a bundled CLI probe helper.
 - Targets: `ShortkingKit` (library), `ShortkingApp` (executable / `@main`),
   `ShortkingProbe` (auxiliary CLI).
-- Build: `make build` (or `swift build`; the Makefile wraps it).
+- Build: `scripts/build.sh` (or `make app`; the stub drives the Makefile).
 - Test: `make test` (or `swift test`). Pure unit tests for model logic.
-- No CI pipelines exist yet; macOS-only builds should gate on a macOS runner.
+- CI runs `swift test` + `make app` on `macos-14` with Xcode 16.2 pinned, and asserts
+  the assembled bundle's layout. See [CICD.md](CICD.md).
 
 ## Architecture invariants
 
@@ -60,9 +110,33 @@ make notarize # notarytool submission
 make dmg      # create distributable disk image
 ```
 
-CI should run `swift build` and `swift test` on a macOS runner. Release
-workflows should sign, notarize, staple, and package a `.dmg`, publishing it
-with a SHA-256 checksum. Never publish an unsigned application bundle.
+The `scripts/` stubs wrap those for the family-standard entry points:
+
+```bash
+scripts/build.sh [--clean] [--debug] [--run] [--install] [--zip] [--dmg]
+scripts/release.sh [X.Y[.Z]] [--push]
+```
+
+Both are ~25-line stubs over the shared engines in
+https://github.com/L-K-M/release-tool (install: clone + `./install.sh`). Keep them
+stubs — repo-specific build logic belongs in the Makefile (which
+`scripts/assemble-app.sh` invokes as the engine's `BUILD_SWIFTPM_ASSEMBLE`
+command), and anything the engine itself lacks belongs upstream as a new kind.
+
+`Resources/Info.plist` is the single source of truth for the version.
+`scripts/release.sh` bumps `CFBundleShortVersionString`, auto-increments
+`CFBundleVersion`, updates the README `<!-- version -->` marker, commits and tags —
+never edit the plist version by hand, and never create a `v*` tag by hand: the
+release workflow refuses a tag that disagrees with the committed version.
+
+CI runs `swift test` and `make app` on a macOS runner. The release workflow packages
+a `.dmg` and `.zip` and publishes them with SHA-256 sums. When the Developer ID
+secrets are configured it signs, notarizes and staples; when none of them are, it
+falls back to an ad-hoc signed build and says so in the release notes, the same as
+Top Drawer and Zap. A *partial* configuration fails the release — that is a
+misconfiguration, not a choice. Developer ID is what Shortking should ship under,
+because an app that asks for Accessibility and Input Monitoring is a poor candidate
+for a Gatekeeper warning; configure the secrets and the next tag upgrades itself.
 
 ## Repository automation
 
@@ -70,9 +144,11 @@ with a SHA-256 checksum. Never publish an unsigned application bundle.
   pull requests when `ZAI_API_KEY` is configured. It intentionally does not run
   for fork pull requests because `pull_request_target` has access to secrets.
 - Dependabot covers GitHub Actions updates weekly.
-- Add `ci.yml` and `release.yml` workflows once a macOS runner and signing
-  secrets are available. The release workflow must sign, notarize, staple, and
-  publish a checksummed DMG.
+- `.github/workflows/ci.yml` tests and assembles the bundle on every PR and push
+  to `main`; `.github/workflows/release.yml` builds, signs (Developer ID when the
+  secrets are set, ad-hoc otherwise) and publishes on a `v*` tag. Both pin Xcode
+  16.2 — bump the two together, and keep them in step with Top Drawer and Zap.
+  [CICD.md](CICD.md) documents both, including the seven release secrets.
 
 ## Conventions
 
