@@ -74,7 +74,8 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack {
-                    Text("\(state.attribution.observations.count) observation(s) recorded")
+                    Text(Plural.count(state.attribution.observations.count, "observation")
+                        + " recorded")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()

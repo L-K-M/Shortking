@@ -101,7 +101,7 @@ public final class AttributionStore: @unchecked Sendable {
         let snapshot = ledger.observations
         lock.unlock()
         persistence?.save(snapshot)
-        Log.attribution.info("Recorded \(observations.count) attribution observation(s)")
+        Log.attribution.info("Recorded \(observations.count) attribution observations")
     }
 
     public func reset() {
@@ -200,8 +200,8 @@ public final class AttributionStore: @unchecked Sendable {
                 evidence: [
                     Evidence(
                         kind: .differentialObservation,
-                        summary: "\(inference.observationCount) consistent observation(s) across "
-                            + "app launch and quit",
+                        summary: Plural.count(inference.observationCount, "consistent observation")
+                            + " across app launch and quit",
                         detail: [
                             "owner": inference.ownerName,
                             "observations": "\(inference.observationCount)",

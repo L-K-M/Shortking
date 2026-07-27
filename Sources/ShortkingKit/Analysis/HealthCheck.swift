@@ -322,7 +322,8 @@ public enum HealthChecker {
                 id: "dead-taps",
                 title: "Event taps",
                 status: .failing,
-                message: "\(regressed.count) event tap(s) stopped working: \(names).",
+                message: Plural.count(regressed.count, "event tap")
+                    + " stopped working: \(names).",
                 detail: "A tap that was enabled and now is not has usually been disabled by a "
                     + "timeout, by user input during a slow callback, or by a code-signature change "
                     + "after an app update. Restarting the app named above normally fixes it.",
@@ -336,7 +337,8 @@ public enum HealthChecker {
                 id: "dead-taps",
                 title: "Event taps",
                 status: .warning,
-                message: "\(dead.count) installed event tap(s) are disabled: \(names).",
+                message: Plural.count(dead.count, "installed event tap")
+                    + (dead.count == 1 ? " is" : " are") + " disabled: \(names).",
                 detail: "These processes registered a tap but it is not currently receiving events. "
                     + "Their keyboard shortcuts will not fire."
             )
@@ -346,7 +348,7 @@ public enum HealthChecker {
             id: "dead-taps",
             title: "Event taps",
             status: .ok,
-            message: "\(eventTaps.count) event tap(s) installed, all enabled."
+            message: Plural.count(eventTaps.count, "event tap") + " installed, all enabled."
         )
     }
 

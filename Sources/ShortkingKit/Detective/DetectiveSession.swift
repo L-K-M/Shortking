@@ -208,7 +208,7 @@ public final class DetectiveSession: ObservableObject {
         findings.append(
             Finding(
                 kind: .note,
-                headline: "Listening on \(attached.count) process(es)",
+                headline: "Listening on " + Plural.count(attached.count, "process"),
                 detail: "Press \(combo?.displayString ?? "the shortcut") now. Capture stops "
                     + "automatically after \(Int(captureDuration)) seconds.",
                 confidence: 1.0

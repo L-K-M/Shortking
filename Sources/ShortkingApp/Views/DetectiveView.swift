@@ -19,14 +19,13 @@ struct DetectiveContent: View {
     @ObservedObject var session: DetectiveSession
     @State private var combo: KeyCombo?
     @State private var blackoutDuration: Double = 10
+    /// Set when a blackout has run *and finished*, which is what makes the
+    /// "It worked" / "Still broken" answers mean anything.
+    @State private var hasCompletedBlackout = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                if state.detective.blackoutActive {
-                    blackoutBanner
-                }
-
                 target
                 if combo != nil || state.detective.combo != nil {
                     techniques
@@ -36,8 +35,32 @@ struct DetectiveContent: View {
             .padding(18)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Pinned, not scrolled with the content. The README promises this banner is
+        // "visible the entire time"; as the first child of the ScrollView it scrolled
+        // away after half a screen, taking the countdown and the Restore now button
+        // with it — for the one state in this app that can leave a user unable to use
+        // their keyboard shortcuts.
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if state.detective.blackoutActive {
+                blackoutBanner
+                    .padding(12)
+                    .background(.bar)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.smooth, value: state.detective.blackoutActive)
         .onAppear {
             combo = session.combo
+        }
+        .onChange(of: state.detective.blackoutActive) { wasActive, isActive in
+            if wasActive && !isActive { hasCompletedBlackout = true }
+        }
+        // Keeps the recorder in step when something else points the session at a
+        // combination — the Overview's "Investigate live", say — while this screen is
+        // already on show. The two guards are what stop it looping against the
+        // recorder's own `onChange`, which calls back into `investigate`.
+        .onChange(of: session.combo) { _, newValue in
+            if let newValue, newValue != combo { combo = newValue }
         }
     }
 
@@ -88,8 +111,9 @@ struct DetectiveContent: View {
                         Button("Stop listening") { state.detective.stopCapture() }
                             .buttonStyle(.borderedProminent)
                         ProgressView().controlSize(.small)
-                        Text("Listening on \(state.detective.capturedProcessCount) process(es) — "
-                            + "press the shortcut now.")
+                        Text("Listening on "
+                            + Plural.count(state.detective.capturedProcessCount, "process")
+                            + " — press the shortcut now.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
@@ -122,6 +146,10 @@ struct DetectiveContent: View {
                             .frame(width: 140)
                     }
 
+                    // Disabled until a blackout has actually run and restored.
+                    // These record a finding at 0.85 confidence, and answering
+                    // "It worked" about a test that never happened puts a
+                    // confident, wrong conclusion into the verdict panel.
                     HStack {
                         Text("After trying it:")
                             .font(.caption)
@@ -134,6 +162,13 @@ struct DetectiveContent: View {
                             state.detective.reportBlackoutResult(shortcutWorked: false)
                         }
                         .controlSize(.small)
+                    }
+                    .disabled(!hasCompletedBlackout)
+
+                    if !hasCompletedBlackout {
+                        Text("Available once a blackout has run and hotkeys are back on.")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
                     }
                 }
             }
@@ -294,8 +329,9 @@ struct IdentificationPlan: View {
                     .font(.callout)
                     .fixedSize(horizontal: false, vertical: true)
                 if step.remainingRestarts > 0 {
-                    Text("Estimated \(step.remainingRestarts) quit/relaunch cycle(s) across "
-                        + "\(suspects.count) suspect(s).")
+                    Text("Estimated "
+                        + Plural.count(step.remainingRestarts, "quit/relaunch cycle")
+                        + " across " + Plural.count(suspects.count, "suspect") + ".")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

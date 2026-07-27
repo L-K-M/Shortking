@@ -137,7 +137,7 @@ public final class SystemDefinedSniffer {
         }
 
         isCapturing = !attached.isEmpty
-        Log.detective.info("systemDefined sniffer attached to \(attached.count) process(es)")
+        Log.detective.info("systemDefined sniffer attached to \(attached.count) processes")
         return attached
     }
 

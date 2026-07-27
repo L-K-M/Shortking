@@ -96,9 +96,13 @@ public final class SandwichTaps {
             (UInt64(1) << UInt64(CGEventType.keyDown.rawValue))
         )
 
-        let boxA = Unmanaged.passRetained(SandwichContext(position: .head) { [weak self] event in
+        // Named distinctly from the `contextA`/`contextB` stored properties: a
+        // local of the same name shadows the property, so the assignments below
+        // would target the local `let` instead of the box the class holds on to.
+        let headContext = SandwichContext(position: .head) { [weak self] event in
             self?.sawAtA(event: event)
-        })
+        }
+        let boxA = Unmanaged.passRetained(headContext)
         guard let portA = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -111,9 +115,10 @@ public final class SandwichTaps {
             return false
         }
 
-        let boxB = Unmanaged.passRetained(SandwichContext(position: .tail) { [weak self] event in
+        let tailContext = SandwichContext(position: .tail) { [weak self] event in
             self?.sawAtB(event: event)
-        })
+        }
+        let boxB = Unmanaged.passRetained(tailContext)
         guard let portB = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap,
             place: .tailAppendEventTap,
@@ -127,6 +132,11 @@ public final class SandwichTaps {
             CFMachPortInvalidate(portA)
             return false
         }
+
+        // The callback needs its own port to re-arm the tap after the system
+        // disables it. See `shortkingSandwichCallback`.
+        headContext.port = portA
+        tailContext.port = portB
 
         tapA = portA
         tapB = portB
@@ -263,6 +273,9 @@ final class SandwichContext {
 
     let position: Position
     let handler: (CGEvent) -> Void
+    /// Assigned immediately after the tap is created, so the callback can re-arm
+    /// its own tap when the system disables it.
+    var port: CFMachPort?
 
     init(position: Position, handler: @escaping (CGEvent) -> Void) {
         self.position = position
@@ -279,10 +292,23 @@ private func shortkingSandwichCallback(
     guard let userInfo else { return Unmanaged.passUnretained(event) }
 
     // A tap disabled by timeout or by user input must be re-armed or it stays dead
-    // silently — one of the failure modes Shortking exists to detect, so it would be
-    // embarrassing to fall into it here.
+    // silently — one of the failure modes Shortking exists to detect in *other*
+    // people's apps, so falling into it here would be embarrassing. The old code
+    // said "it will be re-armed" and then did not: nothing anywhere re-enabled it,
+    // and the capture went on reporting "never arrived" for keys the dead tap simply
+    // never saw.
+    //
+    // These two types are delivered to the callback whatever the mask says, which is
+    // just as well: their raw values are 0xFFFFFFFE and 0xFFFFFFFF, so they cannot be
+    // expressed as mask bits at all.
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        Log.detective.warning("Sandwich tap disabled by the system; it will be re-armed")
+        let context = Unmanaged<SandwichContext>.fromOpaque(userInfo).takeUnretainedValue()
+        if let port = context.port {
+            CGEvent.tapEnable(tap: port, enable: true)
+            Log.detective.warning("Sandwich tap disabled by the system; re-armed")
+        } else {
+            Log.detective.error("Sandwich tap disabled before its port was recorded")
+        }
         return nil
     }
 
