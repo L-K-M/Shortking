@@ -96,10 +96,13 @@ public final class SandwichTaps {
             (UInt64(1) << UInt64(CGEventType.keyDown.rawValue))
         )
 
-        let contextA = SandwichContext(position: .head) { [weak self] event in
+        // Named distinctly from the `contextA`/`contextB` stored properties: a
+        // local of the same name shadows the property, so the assignments below
+        // would target the local `let` instead of the box the class holds on to.
+        let headContext = SandwichContext(position: .head) { [weak self] event in
             self?.sawAtA(event: event)
         }
-        let boxA = Unmanaged.passRetained(contextA)
+        let boxA = Unmanaged.passRetained(headContext)
         guard let portA = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -112,10 +115,10 @@ public final class SandwichTaps {
             return false
         }
 
-        let contextB = SandwichContext(position: .tail) { [weak self] event in
+        let tailContext = SandwichContext(position: .tail) { [weak self] event in
             self?.sawAtB(event: event)
         }
-        let boxB = Unmanaged.passRetained(contextB)
+        let boxB = Unmanaged.passRetained(tailContext)
         guard let portB = CGEvent.tapCreate(
             tap: .cgAnnotatedSessionEventTap,
             place: .tailAppendEventTap,
@@ -132,8 +135,8 @@ public final class SandwichTaps {
 
         // The callback needs its own port to re-arm the tap after the system
         // disables it. See `shortkingSandwichCallback`.
-        contextA.port = portA
-        contextB.port = portB
+        headContext.port = portA
+        tailContext.port = portB
 
         tapA = portA
         tapB = portB
