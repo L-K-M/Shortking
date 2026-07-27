@@ -40,7 +40,7 @@ judging anything else.
 
 | ID | What | Where |
 |---|---|---|
-| C1 | `ForEach` key paths into tuple elements (4 sites) — could not compile | #3 |
+| C1 | `ForEach` key paths into tuple elements (4 sites) — readability refactor, **not** a compile fix (see note below) | #3 |
 | C4d | Recorder timeout ran off the main thread, touching `NSEvent` and `@State` | #3 |
 | V1 | Keycap column truncated long combinations (Overview and Inventory) | #3, #5 |
 | B1 | Input-source switching reported as a conflict with itself | #4 |
@@ -61,6 +61,18 @@ judging anything else.
 | X6 | "1 claim(s)" across seven files | #8 |
 | F7 | Owner icons — **Suspects only**; inventory and conflicts still text-only | #9 |
 | V9 | Animation — **Overview only**; every other screen still snaps | #3 |
+
+> **Correction on C1 (and on "this codebase has never been compiled").** The review
+> asserted that `ForEach(Array(x.enumerated()), id: \.offset)` cannot compile, because
+> Swift has no key paths into tuple elements, and inferred from it that the project had
+> never been built. CI disproves both. On the macOS runner (Xcode 16.2, Swift 6),
+> `Components.swift`, `HomeView.swift` and `InventoryView.swift` — the files holding
+> those exact call sites — compile cleanly on `main` *without* #3's change, the app
+> bundle assembles, and all 69 unit tests pass. #3's `Positioned` wrapper is still worth
+> having (it reads better, and it removes reliance on a construct the review team
+> believed unsupported), but it is a readability refactor, not a fix for a build break.
+> The genuine bugs in #3 are C4d (the recorder timeout running off the main thread) and
+> V1 (the truncated keycap column).
 
 ---
 
@@ -753,7 +765,9 @@ is currently buried on a screen most users will never open.
 
 **Needs a Mac with a toolchain, and nothing else should be judged until it is done:**
 
-1. Build it. Clear whatever C1's siblings turn out to be.
+1. ~~Build it.~~ Done: CI (`.github/workflows/ci.yml`, macOS runner) now runs
+   `swift test` and `make app` on every pull request, so the project is built and
+   its 69 unit tests are run continuously. The build is green.
 2. **C3** — verify the SkyLight argument widths. Memory safety outranks everything
    below.
 3. **B3** — the layout-aware key map. Every non-US user currently sees wrong keys and
