@@ -1,3 +1,4 @@
+import AppKit
 import ShortkingKit
 import SwiftUI
 
@@ -85,8 +86,12 @@ struct SuspectsView: View {
             } else {
                 ForEach(state.capabilityClaims) { claim in
                     HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "app.dashed")
-                            .foregroundStyle(.secondary)
+                        if let owner = claim.owner {
+                            OwnerIcon(owner: owner, size: 20)
+                        } else {
+                            Image(systemName: "app.dashed")
+                                .foregroundStyle(.secondary)
+                        }
                         VStack(alignment: .leading, spacing: 2) {
                             Text(claim.ownerName).font(.callout.weight(.medium))
                             Text(claim.label ?? "Can claim keyboard shortcuts")
@@ -120,12 +125,25 @@ struct TapProcessCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
+                OwnerIcon(owner: process.owner, size: 22)
+
                 Text(process.owner.name)
                     .font(.body.weight(.semibold))
 
                 Text("pid \(process.pid)")
-                    .font(.caption2.monospaced())
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
+
+                if let path = process.owner.path {
+                    Button {
+                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: path)
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.tertiary)
+                    .help("Reveal \(process.owner.name) in Finder")
+                }
 
                 if process.canSwallowKeys {
                     Label("Can swallow keystrokes", systemImage: "scissors")
