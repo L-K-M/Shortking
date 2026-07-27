@@ -74,7 +74,11 @@ final class AppState: ObservableObject {
     // MARK: - Published state
 
     @Published var destination: Destination = .home
-    @Published private(set) var result = ScanResult()
+    @Published private(set) var result = ScanResult() {
+        // Every derived cache in this class keys off this counter rather than off
+        // the contents of `result`, which is far too large to compare.
+        didSet { resultGeneration &+= 1 }
+    }
     @Published private(set) var health = HealthReport(checks: [])
     @Published private(set) var isScanning = false
     @Published private(set) var scanPhase = ""
@@ -90,6 +94,14 @@ final class AppState: ObservableObject {
     @Published var layerFilter: Set<ClaimLayer> = []
     @Published var statusFilter: Set<ClaimStatus> = []
     @Published var selectedComboKey: String?
+    /// The row selected in a grouped (by owner / by layer) list.
+    ///
+    /// Separate from ``selectedComboKey`` because those lists flatten to *claims*:
+    /// one combination legitimately appears under several owners, so a row's identity
+    /// has to carry its bucket too. `List` needs globally unique tags — tagging
+    /// several rows with the same combination key made it highlight all of them at
+    /// once and left the detail pane's selection ambiguous.
+    @Published var selectedRowKey: String?
 
     // MARK: - Collaborators
 
@@ -98,18 +110,41 @@ final class AppState: ObservableObject {
     private let coordinator: ScanCoordinator
     private let settingsStore: SettingsStore
     private let adapterRegistry = AdapterRegistry()
+    /// Held here, not left to the scanners' defaults, so that "Clear caches" can
+    /// clear the instances the scan is actually using.
+    private let menuCache: MenuCache
+    private let triageCache: TriageCache
     private var differential: DifferentialEngine?
     private var previouslyEnabledTapIDs: Set<UInt32> = []
     private var scanTask: Task<Void, Never>?
+
+    /// Bumped whenever ``result`` is replaced. Derived caches compare against it.
+    private var resultGeneration: UInt64 = 0
+
+    // Memoisation for `filteredGroups` and its search index. Deliberately not
+    // `@Published`: they are derived state, and publishing them would re-render the
+    // world every time a cache warmed.
+    private var filterCacheKey: String?
+    private var filterCacheValue: [ComboGroup] = []
+    private var searchIndexGeneration: UInt64 = .max
+    private var searchIndexValue: [String: String] = [:]
 
     init() {
         // One store, shared by the coordinator (which folds inferences into scans)
         // and the detective session (which records live captures into it).
         let store = AttributionStore()
         let settingsStore = SettingsStore()
+        let menuCache = MenuCache()
+        let triageCache = TriageCache()
+
         self.attribution = store
         self.detective = DetectiveSession(store: store)
-        self.coordinator = ScanCoordinator(attribution: store)
+        self.menuCache = menuCache
+        self.triageCache = triageCache
+        self.coordinator = ScanCoordinator(
+            sources: ScanCoordinator.defaultSources(menuCache: menuCache, triageCache: triageCache),
+            attribution: store
+        )
         self.settingsStore = settingsStore
         self.settings = settingsStore.current
 
@@ -140,17 +175,21 @@ final class AppState: ObservableObject {
 
         scanTask = Task { [weak self] in
             guard let self else { return }
+            // `defer` rather than a trailing assignment: an early return on
+            // cancellation used to leave `isScanning` true forever, and `rescan()`
+            // guards on it, so a single cancelled scan would have wedged every
+            // future one for the life of the process.
+            defer {
+                self.isScanning = false
+                self.scanPhase = ""
+            }
+
             self.scanPhase = "Reading menus, configs and system shortcuts…"
 
             let scanResult = await self.coordinator.scan(context: context)
             guard !Task.isCancelled else { return }
 
             self.result = scanResult
-            self.health = HealthChecker.run(
-                eventTaps: scanResult.eventTaps,
-                probeReport: scanResult.probeReport,
-                previouslyEnabledTapIDs: self.previouslyEnabledTapIDs
-            )
             self.previouslyEnabledTapIDs = Set(
                 scanResult.eventTaps.filter(\.enabled).map(\.tapID)
             )
@@ -161,9 +200,33 @@ final class AppState: ObservableObject {
                 self.startDifferentialLearning(baseline: report)
             }
 
-            self.isScanning = false
-            self.scanPhase = ""
+            self.health = await Self.runHealthChecks(
+                eventTaps: scanResult.eventTaps,
+                probeReport: scanResult.probeReport,
+                previouslyEnabledTapIDs: self.previouslyEnabledTapIDs
+            )
         }
+    }
+
+    /// Health checks, off the main actor.
+    ///
+    /// `HealthChecker.run` walks our own menu bar through the Accessibility API with
+    /// a one-second messaging timeout, creates an event tap, and — when secure input
+    /// is on — shells out to `ioreg`. Running that on the main actor stalled the UI
+    /// at the end of every single scan, which is exactly when the user is watching.
+    /// None of it touches AppKit view state, so a detached task is safe.
+    private static func runHealthChecks(
+        eventTaps: [EventTapInfo],
+        probeReport: ProbeReport?,
+        previouslyEnabledTapIDs: Set<UInt32>
+    ) async -> HealthReport {
+        await Task.detached(priority: .userInitiated) {
+            HealthChecker.run(
+                eventTaps: eventTaps,
+                probeReport: probeReport,
+                previouslyEnabledTapIDs: previouslyEnabledTapIDs
+            )
+        }.value
     }
 
     private func startDifferentialLearning(baseline: ProbeReport) {
@@ -209,7 +272,18 @@ final class AppState: ObservableObject {
 
     // MARK: - Derived views of the data
 
+    /// The inventory, narrowed by the current search and filters.
+    ///
+    /// Memoised, because this is read at least twice per render of `InventoryView` —
+    /// once for the rows and once for the "N of M" counter — and re-evaluated on
+    /// every keystroke. The uncached version called `claim.searchTokens` for every
+    /// claim on every pass, and that property *builds a fresh array of lowercased
+    /// Strings each time*: roughly sixteen thousand allocations per pass on a
+    /// machine with two thousand claims, twice per keystroke.
     var filteredGroups: [ComboGroup] {
+        let key = filterKey
+        if filterCacheKey == key { return filterCacheValue }
+
         var groups = result.groups
 
         if conflictsOnly {
@@ -231,20 +305,69 @@ final class AppState: ObservableObject {
 
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         if !query.isEmpty {
+            let index = searchIndex()
             groups = groups.filter { group in
-                if group.combo.displayString.lowercased().contains(query) { return true }
-                return group.claims.contains { claim in
-                    claim.searchTokens.contains { $0.contains(query) }
-                }
+                index[group.id]?.contains(query) ?? false
             }
         }
 
+        filterCacheKey = key
+        filterCacheValue = groups
         return groups
     }
 
+    /// Everything `filteredGroups` depends on, as one comparable value.
+    private var filterKey: String {
+        [
+            "\(resultGeneration)",
+            searchText.trimmingCharacters(in: .whitespaces).lowercased(),
+            conflictsOnly ? "c" : "",
+            enabledOnly ? "e" : "",
+            layerFilter.map { "\($0.rawValue)" }.sorted().joined(separator: ","),
+            statusFilter.map(\.rawValue).sorted().joined(separator: ","),
+        ].joined(separator: "\u{1}")
+    }
+
+    /// One lowercased haystack per combination, rebuilt only when a scan lands.
+    private func searchIndex() -> [String: String] {
+        guard searchIndexGeneration != resultGeneration else { return searchIndexValue }
+
+        var index: [String: String] = [:]
+        index.reserveCapacity(result.groups.count)
+        for group in result.groups {
+            var parts = [group.combo.displayString.lowercased()]
+            for claim in group.claims { parts.append(contentsOf: claim.searchTokens) }
+            index[group.id] = parts.joined(separator: "\u{1}")
+        }
+
+        searchIndexValue = index
+        searchIndexGeneration = resultGeneration
+        return index
+    }
+
+    /// The combination whose detail pane is showing.
+    ///
+    /// Which selection binding is authoritative depends on the grouping: the by-combo
+    /// list selects a combination directly, while the grouped lists select a
+    /// `bucket|combination` row because one combination can appear in several buckets.
     var selectedGroup: ComboGroup? {
-        guard let selectedComboKey else { return nil }
-        return result.groups.first { $0.id == selectedComboKey }
+        // The fallback matters: the Overview navigates here by setting
+        // `selectedComboKey` directly, and it should still land on the right detail
+        // pane when the inventory happens to be in a grouped mode.
+        let key: String? = grouping == .combo
+            ? selectedComboKey
+            : (selectedRowKey.map(Self.comboKey(fromRowKey:)) ?? selectedComboKey)
+        guard let key, !key.isEmpty else { return nil }
+        return result.groups.first { $0.id == key }
+    }
+
+    /// Grouped-list rows are tagged `"<bucket>\u{1}<combination key>"`.
+    static func comboKey(fromRowKey rowKey: String) -> String {
+        String(rowKey.split(separator: "\u{1}", maxSplits: 1).last ?? "")
+    }
+
+    static func rowKey(bucket: String, comboKey: String) -> String {
+        "\(bucket)\u{1}\(comboKey)"
     }
 
     /// Capability records — processes that *could* take a key, with no known binding.
@@ -476,8 +599,17 @@ final class AppState: ObservableObject {
     /// `AXIsProcessTrusted()` can flip to `true` the moment the grant lands while
     /// the process still cannot read anything, so onboarding waits on a real menu
     /// read rather than on the permission bit.
+    ///
+    /// `async` deliberately: the underlying call is an Accessibility round trip with
+    /// a one-second messaging timeout, and onboarding polls it once a second. As a
+    /// synchronous main-actor property that was up to a second of frozen UI per
+    /// second, for as long as the sheet was open.
     var accessibilityWorks: Bool {
-        AXBridge.canReadOwnMenuBar()
+        get async {
+            await Task.detached(priority: .userInitiated) {
+                AXBridge.canReadOwnMenuBar()
+            }.value
+        }
     }
 
     func quit() {
@@ -525,12 +657,36 @@ final class AppState: ObservableObject {
 
     func resetAttribution() {
         attribution.reset()
-        refreshInferences()
+        dropInferredClaims()
+    }
+
+    /// Removes the claims that existed only because of the attribution ledger.
+    ///
+    /// `refreshInferences()` only ever *adds*, so resetting the ledger left every
+    /// previously inferred owner on screen until the next full scan — while the
+    /// confirmation sheet promised they would go back to "unknown". A claim that was
+    /// inferred and has since been confirmed directly is `.known` by then, so it
+    /// correctly survives.
+    private func dropInferredClaims() {
+        let remaining = result.claims.filter { $0.status != .inferred }
+        guard remaining.count != result.claims.count else { return }
+
+        let groups = ConflictAnalyzer.analyze(ClaimMerger.group(remaining))
+        result = ScanResult(
+            claims: remaining,
+            groups: groups,
+            conflicts: ConflictAnalyzer.conflicts(in: groups),
+            outcomes: result.outcomes,
+            eventTaps: result.eventTaps,
+            probeReport: result.probeReport,
+            startedAt: result.startedAt,
+            finishedAt: result.finishedAt
+        )
     }
 
     func clearCaches() {
-        MenuCache().clear()
-        TriageCache().clear()
+        menuCache.clear()
+        triageCache.clear()
     }
 
     /// Exports the inventory as Markdown — the format people paste into a bug report.
