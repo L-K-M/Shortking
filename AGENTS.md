@@ -61,7 +61,7 @@ Re-run both against every new macOS major version. See `PLAN.md` §18.
   `ShortkingProbe` (auxiliary CLI).
 - Build: `scripts/build.sh` (or `make app`; the stub drives the Makefile).
 - Test: `make test` (or `swift test`). Pure unit tests for model logic.
-- CI runs `swift test` + `make app` on `macos-14` with Xcode 16.2 pinned, and asserts
+- CI runs `swift test` + `make app` on `macos-15` with Xcode 16.2 pinned, and asserts
   the assembled bundle's layout. See [CICD.md](CICD.md).
 
 ## Architecture invariants

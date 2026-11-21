@@ -30,7 +30,7 @@ signed path with no workflow change.
 | [`release.yml`](.github/workflows/release.yml) | Pushing a `v*` tag (e.g. `v1.2.0`) | Re-test the tagged commit, build, sign (Developer ID or ad-hoc), and publish the GitHub Release. |
 | [`zai-code-review.yml`](.github/workflows/zai-code-review.yml) | Non-draft PRs from this repository | GLM 5.2 review when `ZAI_API_KEY` is configured. Never runs for fork PRs — `pull_request_target` has access to secrets. |
 
-Both `ci.yml` and `release.yml` run on `macos-14` with **Xcode 16.2** pinned via
+Both `ci.yml` and `release.yml` run on `macos-15` with **Xcode 16.2** pinned via
 `maxim-lobanov/setup-xcode`, so a runner-image bump can't silently change the toolchain.
 Bump the two together, and keep them in step with Top Drawer and Zap.
 
