@@ -496,24 +496,34 @@ final class AppState: ObservableObject {
     /// the inventory. Detective Mode is for when this isn't enough — which the
     /// verdict says explicitly rather than leaving the user to guess.
     func verdict(for combo: KeyCombo) -> Verdict {
-        if combo.isRestrictedByOptionHardening {
-            return Verdict(
-                tone: .blocked,
-                headline: "No app can claim \(combo.displayString)",
-                detail: "Since macOS 15, shortcuts whose only modifiers are ⌥ or ⌥⇧ are refused "
-                    + "system-wide as an anti-keylogging measure. If this one used to work, that "
-                    + "is why — it is not a conflict, and rebinding the app won't help.",
-                offersInvestigation: false
-            )
-        }
+        Self.verdict(for: combo, in: result)
+    }
 
-        guard let group = result.groups.first(where: { $0.combo == combo }) else {
+    static func verdict(for combo: KeyCombo, in result: ScanResult) -> Verdict {
+        let group = result.groups.first { $0.combo == combo }
+        var verdict = inventoryVerdict(for: combo, group: group)
+        guard result.probeReport?.outcome(for: combo) == .restricted else { return verdict }
+
+        let note = "macOS refused the probe’s Carbon global hotkey registration. "
+            + "App menus and event taps can still handle this shortcut."
+        if group?.claims.contains(where: { $0.enabled && $0.isBinding }) == true {
+            verdict.detail += " " + note
+            verdict.offersInvestigation = true
+            return verdict
+        }
+        return Verdict(
+            tone: .blocked, headline: "Global registration for \(combo.displayString) was refused",
+            detail: note, offersInvestigation: true
+        )
+    }
+
+    private static func inventoryVerdict(for combo: KeyCombo, group: ComboGroup?) -> Verdict {
+        guard let group else {
             return Verdict(
                 tone: .unknown,
                 headline: "Nothing Shortking can see claims \(combo.displayString)",
-                detail: "No config file, menu bar, preference domain or hotkey registration "
-                    + "accounts for it. That points at the frontmost app's own handling, or at a "
-                    + "tool that pattern-matches keys in its own code and registers nothing.",
+                detail: "The inventory found no binding. A shared global hotkey, an event tap, "
+                    + "or a command handled inside the frontmost app can still respond.",
                 offersInvestigation: true
             )
         }
@@ -531,7 +541,7 @@ final class AppState: ObservableObject {
                 return Verdict(
                     tone: .conflict,
                     headline: conflict.kind == .contextual
-                        ? "\(conflict.winner?.ownerName ?? "Something") takes \(combo.displayString) first"
+                        ? "\(conflict.winner?.ownerName ?? "Something") has a global binding for \(combo.displayString)"
                         : "\(combo.displayString) is claimed more than once",
                     detail: conflict.explanation,
                     offersInvestigation: true
@@ -539,19 +549,30 @@ final class AppState: ObservableObject {
             }
         }
 
+        let menus = group.menuOnlyBindings
+        if !menus.isEmpty {
+            let owners = Set(menus.map(\.ownerName)).sorted().joined(separator: ", ")
+            return Verdict(
+                tone: .good,
+                headline: "\(combo.displayString) is an app-menu shortcut",
+                detail: "Found in the menus of \(owners). Each command applies only while its "
+                    + "app is frontmost. Investigate a keypress to check for a global shortcut.",
+                offersInvestigation: true
+            )
+        }
+
         guard let winner = group.winner else {
             return Verdict(
                 tone: .unknown,
-                headline: "\(combo.displayString) is claimed, but everything holding it is disabled",
-                detail: "Every claim Shortking found on this combination is switched off, so "
-                    + "pressing it should do nothing at all.",
+                headline: "No enabled binding found for \(combo.displayString)",
+                detail: "Investigate a keypress to see whether an app handles it.",
                 offersInvestigation: true
             )
         }
 
         return Verdict(
             tone: .good,
-            headline: "\(winner.ownerName) has \(combo.displayString)",
+            headline: "\(winner.ownerName) has a global claim on \(combo.displayString)",
             detail: [winner.label, winner.layer.explanation]
                 .compactMap { $0 }
                 .joined(separator: " — "),
@@ -584,7 +605,7 @@ final class AppState: ObservableObject {
 
     func startDetectiveCapture() {
         detective.startCapture(
-            eventTaps: result.eventTaps,
+            eventTaps: EventTapScanner.currentTaps(),
             capabilityClaims: capabilityClaims,
             runningApps: runningApps
         )

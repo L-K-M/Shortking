@@ -43,17 +43,17 @@ struct SettingsView: View {
 
                 Text("Probing registers each combination for a moment and releases it immediately, "
                     + "in a separate short-lived process so a crash cannot leave your keyboard "
-                    + "hijacked. A refusal means someone else holds it.")
+                    + "hijacked. A collision indicates another registration.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let verified = state.settings.probingVerified {
+                if let report = state.result.probeReport {
+                    let verified = report.probingVerified
                     Label(
                         verified
-                            ? "Verified on this machine: duplicate registration is refused."
-                            : "This macOS build permits duplicate registration, so probe results "
-                                + "are hidden rather than shown wrongly.",
+                            ? "Exclusive hotkey detection verified. See Health for shared registrations."
+                            : "Cross-process hotkey detection could not be verified.",
                         systemImage: verified ? "checkmark.seal" : "exclamationmark.triangle"
                     )
                     .font(.caption)

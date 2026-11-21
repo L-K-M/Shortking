@@ -120,17 +120,27 @@ public struct ComboGroup: Identifiable, Sendable {
         self.conflict = conflict
     }
 
-    /// The claim that actually fires: lowest layer wins, ties broken by confidence.
-    ///
-    /// Disabled claims never win, and capability records are not bindings so they
-    /// never win either.
+    var enabledBindings: [Claim] {
+        claims.filter { $0.enabled && $0.isBinding }
+    }
+
+    /// Without a global binding, each menu command only applies in its own app.
+    public var menuOnlyBindings: [Claim] {
+        let active = enabledBindings
+        return active.allSatisfy { $0.layer == .appMenu } ? active : []
+    }
+
+    /// The unique earliest global binding in the inventory. Confidence describes
+    /// the evidence for a claim, not the dispatch order of peers at the same layer.
     public var winner: Claim? {
-        claims
-            .filter { $0.enabled && $0.isBinding }
-            .min { lhs, rhs in
-                if lhs.layer != rhs.layer { return lhs.layer < rhs.layer }
-                return lhs.confidence > rhs.confidence
-            }
+        let globals = enabledBindings.filter { $0.layer.isGlobal }
+        let leading = Self.earliestLayerBindings(in: globals)
+        return leading.count == 1 ? leading[0] : nil
+    }
+
+    static func earliestLayerBindings(in globals: [Claim]) -> [Claim] {
+        guard let layer = globals.map(\.layer).min() else { return [] }
+        return globals.filter { $0.layer == layer }
     }
 
     public var losers: [Claim] {

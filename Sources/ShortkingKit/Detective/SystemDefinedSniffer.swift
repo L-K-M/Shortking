@@ -79,11 +79,23 @@ public final class SystemDefinedSniffer {
             if let pid = claim.owner?.pid { pids.insert(pid) }
         }
 
-        return runningApps.filter { app in
+        var suspects = runningApps.filter { app in
             if pids.contains(app.pid) { return true }
             if let bundleID = app.bundleID, bundleIDs.contains(bundleID) { return true }
             return app.isActive
         }
+
+        // Background helpers such as deskflow-core can own hotkeys and a keyboard
+        // filter without appearing in NSWorkspace's list of running applications.
+        var seen = Set(suspects.map(\.pid))
+        for tap in eventTaps where tap.canSwallowKeys && tap.tappingPID > 0 {
+            guard seen.insert(tap.tappingPID).inserted else { continue }
+            suspects.append(RunningApp(
+                pid: tap.tappingPID, name: tap.owner.name, bundleID: tap.owner.bundleID,
+                bundlePath: tap.owner.path, version: nil, isActive: false, hasMenuBar: false
+            ))
+        }
+        return suspects
     }
 
     /// Attaches listen-only taps to each app and calls `onDelivery` on the main

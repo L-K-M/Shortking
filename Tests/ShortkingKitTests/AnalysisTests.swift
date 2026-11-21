@@ -26,13 +26,15 @@ final class ConflictAnalyzerTests: XCTestCase {
     func testTwoClaimsAtTheSameGlobalLayerIsDefinite() {
         let group = ComboGroup(combo: combo, claims: [
             claim(combo, layer: .windowServer, owner: "Raycast"),
-            claim(combo, layer: .windowServer, owner: "Alfred"),
+            claim(combo, layer: .windowServer, owner: "Alfred", status: .inferred),
         ])
 
         let conflict = ConflictAnalyzer.conflict(for: group)
         XCTAssertEqual(conflict?.kind, .definite)
         XCTAssertEqual(conflict?.severity, .high)
         XCTAssertEqual(conflict?.losers.count, 2)
+        XCTAssertNil(group.winner)
+        XCTAssertNil(conflict?.winner)
     }
 
     func testDifferentGlobalLayersShadow() {
@@ -69,6 +71,8 @@ final class ConflictAnalyzerTests: XCTestCase {
         ])
 
         XCTAssertNil(ConflictAnalyzer.conflict(for: group))
+        XCTAssertNil(group.winner)
+        XCTAssertTrue(group.losers.isEmpty)
     }
 
     /// Two menu items in the *same* app bound to one combination is a real problem.
@@ -121,7 +125,22 @@ final class ConflictAnalyzerTests: XCTestCase {
             claim(combo, layer: .appMenu, owner: "Finder"),
         ])
 
-        XCTAssertEqual(group.winner?.ownerName, "Finder")
+        XCTAssertNil(group.winner, "a menu binding only applies in its own app")
+        XCTAssertEqual(group.menuOnlyBindings.map(\.ownerName), ["Finder"])
+    }
+
+    func testDeskflowBindingTakesPrecedenceOverAppMenus() {
+        let cmd1 = KeyCombo(character: "1", modifiers: [.command])
+        let finder = claim(cmd1, layer: .appMenu, owner: "Finder", label: "as Icons")
+        let tailscale = claim(cmd1, layer: .appMenu, owner: "Tailscale", label: "Devices")
+        let deskflow = claim(cmd1, layer: .windowServer, owner: "Deskflow", label: "Switch to screen")
+        for menus in [[finder, tailscale], [tailscale, finder]] {
+            XCTAssertNil(ComboGroup(combo: cmd1, claims: menus).winner)
+            let group = ComboGroup(combo: cmd1, claims: menus + [deskflow])
+            XCTAssertEqual(group.winner?.id, deskflow.id)
+            XCTAssertTrue(group.menuOnlyBindings.isEmpty)
+            XCTAssertEqual(ConflictAnalyzer.conflict(for: group)?.winner?.id, deskflow.id)
+        }
     }
 }
 
@@ -252,7 +271,7 @@ final class ProbeClassificationTests: XCTestCase {
             CarbonHotKey.classify(status: CarbonHotKey.hotKeyExistsErr, combo: combo),
             .claimed
         )
-        XCTAssertEqual(CarbonHotKey.classify(status: 0, combo: combo), .free)
+        XCTAssertEqual(CarbonHotKey.classify(status: 0, combo: combo), .accepted)
     }
 
     func testProbeSpaceNeverIncludesBareCombos() {

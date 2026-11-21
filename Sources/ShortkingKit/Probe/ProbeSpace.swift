@@ -33,6 +33,7 @@ public enum ProbeSpace {
     /// The modifier sets worth asking about, ordered roughly by how often people
     /// bind them.
     public static let commonModifiers: [Modifiers] = [
+        [.command],
         [.command, .shift],
         [.command, .option],
         [.command, .control],
@@ -46,7 +47,6 @@ public enum ProbeSpace {
     ]
 
     public static let wideModifiers: [Modifiers] = commonModifiers + [
-        [.command],
         [.control],
         [.option],
         [.option, .shift],

@@ -32,6 +32,7 @@ public final class DifferentialEngine {
     private let store: AttributionStore
     private let runner: ProbeRunner
     private var baseline: Set<KeyCombo> = []
+    private var baselineAccepted: Set<KeyCombo> = []
     private var watchedCombos: [KeyCombo] = []
     private var observers: [NSObjectProtocol] = []
     private var pendingWork: Task<Void, Never>?
@@ -59,6 +60,7 @@ public final class DifferentialEngine {
         }
 
         self.baseline = report.claimedCombos
+        self.baselineAccepted = report.acceptedCombos
         // Watch the claimed set plus everything else we swept, so a combination that
         // becomes *newly* claimed is visible too.
         self.watchedCombos = report.results.map(\.combo)
@@ -141,9 +143,13 @@ public final class DifferentialEngine {
         guard report.probingVerified else { return }
 
         let nowClaimed = report.claimedCombos
-        let freed = baseline.subtracting(nowClaimed)
-        let newlyClaimed = nowClaimed.subtracting(baseline)
+        // Both sides of a transition need a usable reading. A missing, restricted
+        // or failed probe gives no evidence that an app acquired or released a key.
+        let nowAccepted = report.acceptedCombos
+        let freed = baseline.intersection(nowAccepted)
+        let newlyClaimed = baselineAccepted.intersection(nowClaimed)
         baseline = nowClaimed
+        baselineAccepted = nowAccepted
 
         guard !freed.isEmpty || !newlyClaimed.isEmpty else { return }
 

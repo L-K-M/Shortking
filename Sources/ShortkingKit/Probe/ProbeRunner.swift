@@ -76,7 +76,7 @@ public final class ProbeRunner: @unchecked Sendable {
                 breadth: .common,
                 startedAt: Date(),
                 finishedAt: Date(),
-                probingVerified: true
+                probingVerified: false
             )
         }
         let encoded = combos.compactMap { combo -> String? in

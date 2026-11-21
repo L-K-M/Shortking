@@ -1,15 +1,16 @@
 import Carbon.HIToolbox
 import Foundation
 
-/// A thin, safe wrapper around `RegisterEventHotKey`, used for negative-space
-/// probing: you cannot ask macOS what is registered, but you can ask "may I have
-/// this?" — and the answer is no precisely when someone else holds it.
+/// Registers and probes Carbon hotkeys. WindowServer can allow different processes
+/// to register the same shortcut, depending on their registration options.
 public enum CarbonHotKey {
 
     /// The outcome of asking for one combination.
     public enum ProbeOutcome: String, Codable, Hashable, Sendable {
-        /// Registration succeeded (and was immediately released) — nobody holds it.
+        /// Registration succeeded on a system where ordinary cross-process collisions are detectable.
         case free
+        /// Registration succeeded, but a shared registration could still hold this shortcut.
+        case accepted
         /// Registration was refused because someone already holds it.
         case claimed
         /// Refused by the macOS 15+ ⌥-only / ⌥⇧-only hardening. **Not** a conflict.
@@ -20,6 +21,7 @@ public enum CarbonHotKey {
         public var displayName: String {
             switch self {
             case .free:       return "Available"
+            case .accepted:   return "Registration accepted"
             case .claimed:    return "Claimed"
             case .restricted: return "Restricted by macOS"
             case .unknown:    return "Unknown"
@@ -50,7 +52,7 @@ public enum CarbonHotKey {
     /// "restricted" for the modifier sets Apple actually hardened. Anywhere else it
     /// is an unknown failure and is reported as such rather than being swept up.
     public static func classify(status: OSStatus, combo: KeyCombo) -> ProbeOutcome {
-        if status == noErr { return .free }
+        if status == noErr { return .accepted }
         if status == hotKeyExistsErr { return .claimed }
         if status == internalErr && combo.isRestrictedByOptionHardening { return .restricted }
         return .unknown
@@ -84,7 +86,9 @@ public enum CarbonHotKey {
     ///
     /// Callers that only want to know availability should use ``probe(_:id:)``,
     /// which releases in a `defer` and cannot leak.
-    public static func register(_ combo: KeyCombo, id: UInt32) -> (OSStatus, Registration?) {
+    public static func register(
+        _ combo: KeyCombo, id: UInt32, exclusive: Bool = false
+    ) -> (OSStatus, Registration?) {
         guard let keyCode = combo.keyCode else {
             return (OSStatus(paramErr), nil)
         }
@@ -95,7 +99,7 @@ public enum CarbonHotKey {
             combo.modifiers.carbonMask,
             hotKeyID,
             GetEventDispatcherTarget(),
-            0,
+            exclusive ? UInt32(kEventHotKeyExclusive) : 0,
             &ref
         )
         guard status == noErr, let ref else { return (status, nil) }
@@ -110,36 +114,12 @@ public enum CarbonHotKey {
     /// additionally runs in a short-lived helper process so that even a crash here
     /// is cleaned up by the OS.
     public static func probe(_ combo: KeyCombo, id: UInt32) -> ProbeResult {
-        let (status, registration) = register(combo, id: id)
+        let (status, registration) = register(combo, id: id, exclusive: true)
         defer { registration?.release() }
         return ProbeResult(
             combo: combo,
             outcome: classify(status: status, combo: combo),
             status: status
         )
-    }
-
-    /// Experiment A from the research document, as a runtime self-test.
-    ///
-    /// Registers a combination, then probes the same combination from the same
-    /// process. If the second attempt fails distinguishably, negative-space probing
-    /// and differential attribution both work on this OS build. If it succeeds,
-    /// duplicate registration is permitted and the whole probe line of attack has to
-    /// be disabled rather than silently producing nonsense.
-    public static func selfTestProbingWorks() -> (works: Bool, status: OSStatus) {
-        // ⌃⌥⌘F19 — a combination essentially nothing binds, so a "claimed" result
-        // here really is our own registration and not a bystander.
-        guard let keyCode = KeyCodes.nameToKeyCode["f19"] else { return (false, OSStatus(paramErr)) }
-        let combo = KeyCombo(keyCode: keyCode, modifiers: [.control, .option, .command])
-
-        let (firstStatus, holder) = register(combo, id: 0xF001)
-        defer { holder?.release() }
-        guard firstStatus == noErr, holder != nil else {
-            // We could not even take it — inconclusive, so assume probing is unsafe.
-            return (false, firstStatus)
-        }
-
-        let second = probe(combo, id: 0xF002)
-        return (second.outcome == .claimed, second.status)
     }
 }

@@ -40,8 +40,10 @@ out who the owner is.
   live path catches defaults that were never written out and MDM-managed values.
 - **User-assigned App Shortcuts** (`NSUserKeyEquivalents`) across every preference domain.
 - **Services** (`pbs.plist`) and **input source** switching.
-- **Third-party configs**: Karabiner-Elements, skhd, Hammerspoon, VS Code and its forks, JetBrains
-  IDEs.
+- **Third-party configs** include Karabiner-Elements, skhd, Hammerspoon, VS Code and its forks,
+  JetBrains IDEs, and Deskflow. For Deskflow, each shortcut shows the server configuration path
+  and line that defines it. In Deskflow 1.27 on macOS, `Alt+1` in a hotkey rule means ⌘1 and `Super`
+  denotes Option. Saved rules appear disabled when the server using them is stopped.
 - **Any app using MASShortcut, ShortcutRecorder, or `KeyboardShortcuts`** — three parsers that
   between them cover hundreds of apps nobody wrote an adapter for.
 - **Active event taps** (`CGGetEventTapList`) — the exact list of processes that can intercept a
@@ -64,13 +66,17 @@ rendered as a fact.
 Attribution confidence never reaches 1.0, and one contradicting observation costs twice what one
 confirming observation gains. A wrong name is worse than no name.
 
+Several apps can list the same menu shortcut. Each menu applies while its app is frontmost.
+A global Deskflow rule can intercept the key before any of those menus handles it. The probe
+checks whether two processes can share a registration on the current Mac. Where sharing is
+allowed, a successful registration leaves the owner unresolved.
+
 ## Detective Mode
 
 Three techniques, each independently runnable:
 
-- **Live capture** — attaches listen-only per-pid taps to the suspect set, masked on
-  `NX_SYSDEFINED`. When WindowServer matches a hotkey it delivers a system-defined event to exactly
-  one process. That process is your answer, by name, at press time.
+- **Live capture** — watches for system-defined hotkey events delivered to suspect processes,
+  including keyboard helpers such as `deskflow-core`, and names the observed recipient.
 - **Blackout test** — disables every WindowServer hotkey for a few seconds. If your shortcut
   suddenly works, a Carbon hotkey was eating it; if not, the cause is an event tap, a Karabiner
   remap, secure input, or the app itself.

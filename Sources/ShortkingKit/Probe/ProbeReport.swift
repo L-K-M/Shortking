@@ -6,11 +6,22 @@ public struct ProbeReport: Codable, Hashable, Sendable {
     public var breadth: ProbeBreadth
     public var startedAt: Date
     public var finishedAt: Date
-    /// Whether Experiment A passed on this machine. When `false`, the claimed set
-    /// is not trustworthy and the UI says so instead of showing it.
-    public var probingVerified: Bool
+    /// Whether the probe refused a key held exclusively by a separate process.
+    public var probingVerified: Bool {
+        // Older helpers used a same-process collision as their positive control.
+        get { verifiedByHelper && detectsSharedRegistrations != nil }
+        set { verifiedByHelper = newValue }
+    }
+    private var verifiedByHelper: Bool
+    /// Nil in reports from helpers that did not check shared registrations.
+    public var detectsSharedRegistrations: Bool?
     /// Any status codes we could not classify, recorded raw for triage.
     public var unknownStatusCodes: [Int32]
+
+    private enum CodingKeys: String, CodingKey {
+        case results, breadth, startedAt, finishedAt, unknownStatusCodes, detectsSharedRegistrations
+        case verifiedByHelper = "probingVerified"
+    }
 
     public init(
         results: [CarbonHotKey.ProbeResult],
@@ -18,20 +29,23 @@ public struct ProbeReport: Codable, Hashable, Sendable {
         startedAt: Date,
         finishedAt: Date,
         probingVerified: Bool,
+        detectsSharedRegistrations: Bool? = false,
         unknownStatusCodes: [Int32] = []
     ) {
         self.results = results
         self.breadth = breadth
         self.startedAt = startedAt
         self.finishedAt = finishedAt
-        self.probingVerified = probingVerified
+        self.verifiedByHelper = probingVerified
+        self.detectsSharedRegistrations = detectsSharedRegistrations
         self.unknownStatusCodes = unknownStatusCodes
     }
 
     public var duration: TimeInterval { finishedAt.timeIntervalSince(startedAt) }
 
     public var claimed: [CarbonHotKey.ProbeResult] {
-        results.filter { $0.outcome == .claimed }
+        guard probingVerified else { return [] }
+        return results.filter { $0.outcome == .claimed }
     }
 
     public var restricted: [CarbonHotKey.ProbeResult] {
@@ -39,7 +53,8 @@ public struct ProbeReport: Codable, Hashable, Sendable {
     }
 
     public var free: [CarbonHotKey.ProbeResult] {
-        results.filter { $0.outcome == .free }
+        guard probingVerified && detectsSharedRegistrations == true else { return [] }
+        return results.filter { $0.outcome == .free }
     }
 
     public var unknown: [CarbonHotKey.ProbeResult] {
@@ -47,7 +62,18 @@ public struct ProbeReport: Codable, Hashable, Sendable {
     }
 
     public func outcome(for combo: KeyCombo) -> CarbonHotKey.ProbeOutcome? {
-        results.first { $0.combo == combo }?.outcome
+        guard let outcome = results.first(where: { $0.combo == combo })?.outcome else { return nil }
+        switch outcome {
+        case .free where detectsSharedRegistrations != true || !probingVerified: return .accepted
+        case .claimed where !probingVerified: return nil
+        default: return outcome
+        }
+    }
+
+    /// Accepted probes can be compared with explicit collisions, even on systems
+    /// where a success cannot rule out a shared registration.
+    var acceptedCombos: Set<KeyCombo> {
+        Set(results.filter { $0.outcome == .free || $0.outcome == .accepted }.map(\.combo))
     }
 
     /// The set of combinations someone holds, as a lookup set.
@@ -68,14 +94,10 @@ public enum ProbeSweep {
     public static func run(
         breadth: ProbeBreadth,
         combos: [KeyCombo]? = nil,
+        verification: ProbeCoverage = .unverified,
         progress: ((Int, Int) -> Void)? = nil
     ) -> ProbeReport {
         let startedAt = Date()
-
-        // Experiment A: measure on this machine whether a duplicate registration is
-        // actually refused. If it is not, every "claimed" reading below is
-        // meaningless and the report says so rather than lying quietly.
-        let (verified, _) = CarbonHotKey.selfTestProbingWorks()
 
         let targets = combos ?? ProbeSpace.combos(for: breadth)
         var results: [CarbonHotKey.ProbeResult] = []
@@ -83,9 +105,11 @@ public enum ProbeSweep {
         var unknownCodes = Set<Int32>()
 
         for (index, combo) in targets.enumerated() {
-            let result = CarbonHotKey.probe(combo, id: UInt32(index % 0xFFFF) + 1)
-            results.append(result)
+            var result = CarbonHotKey.probe(combo, id: UInt32(index % 0xFFFF) + 1)
             if result.outcome == .unknown { unknownCodes.insert(result.status) }
+            if result.outcome == .accepted && verification == .sharedAndExclusive { result.outcome = .free }
+            if result.outcome == .claimed && verification == .unverified { result.outcome = .unknown }
+            results.append(result)
             progress?(index + 1, targets.count)
         }
 
@@ -94,7 +118,8 @@ public enum ProbeSweep {
             breadth: breadth,
             startedAt: startedAt,
             finishedAt: Date(),
-            probingVerified: verified,
+            probingVerified: verification != .unverified,
+            detectsSharedRegistrations: verification == .sharedAndExclusive,
             unknownStatusCodes: Array(unknownCodes).sorted()
         )
     }

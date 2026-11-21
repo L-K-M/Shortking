@@ -262,16 +262,17 @@ public enum HealthChecker {
                 id: "probing",
                 title: "Hotkey probing",
                 status: .warning,
-                message: "This macOS build permits duplicate hotkey registration.",
-                detail: "Shortking verifies on every launch that registering an already-taken "
-                    + "combination is refused. On this machine it was not, so probe results cannot "
-                    + "distinguish taken from free. The claimed-combination map is hidden rather "
-                    + "than shown wrongly; Detective Mode's live capture still works."
+                message: "Could not verify cross-process hotkey detection.",
+                detail: "The probe could not confirm a collision with a separate helper. "
+                    + "Occupancy results are hidden for this scan."
             )
         }
 
-        var detail = "\(report.claimed.count) of \(report.results.count) probed combinations are "
-            + "held by someone at the WindowServer layer."
+        let shared = report.detectsSharedRegistrations == true
+        var detail = "WindowServer refused \(report.claimed.count) of \(report.results.count) registrations as occupied."
+        if !shared {
+            detail += " A successful probe can coexist with another app's shared registration."
+        }
         if !report.unknownStatusCodes.isEmpty {
             let codes = report.unknownStatusCodes.map(String.init).joined(separator: ", ")
             detail += " Unrecognised status codes seen: \(codes)."
@@ -280,8 +281,10 @@ public enum HealthChecker {
         return HealthCheck(
             id: "probing",
             title: "Hotkey probing",
-            status: report.unknownStatusCodes.isEmpty ? .ok : .warning,
-            message: "Working. Duplicate registration is correctly refused.",
+            status: shared && report.unknownStatusCodes.isEmpty ? .ok : .warning,
+            message: shared
+                ? "Verified detection of shared and exclusive registrations."
+                : "Verified detection of exclusive registrations only.",
             detail: detail
         )
     }

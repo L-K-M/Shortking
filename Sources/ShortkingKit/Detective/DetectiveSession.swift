@@ -136,6 +136,15 @@ public final class DetectiveSession: ObservableObject {
                         confidence: 1.0
                     )
                 )
+            case .accepted:
+                findings.append(
+                    Finding(
+                        kind: .note,
+                        headline: "Probe registration succeeded",
+                        detail: "Another app can still hold a shared registration for this shortcut.",
+                        confidence: 0.5
+                    )
+                )
             case .free:
                 findings.append(
                     Finding(

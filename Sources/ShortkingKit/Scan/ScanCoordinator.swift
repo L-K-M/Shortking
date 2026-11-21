@@ -110,7 +110,7 @@ public actor ScanCoordinator {
         // Attribution: fold in what differential learning has concluded, but only
         // for combinations nobody has named directly.
         let namedCombos = Set(
-            claims.filter { $0.status == .known && $0.layer <= .symbolic }.map(\.combo)
+            claims.filter { $0.enabled && $0.status == .known && $0.layer <= .symbolic }.map(\.combo)
         )
         let unattributed = claims
             .filter { $0.status == .probedClaimed && !namedCombos.contains($0.combo) }

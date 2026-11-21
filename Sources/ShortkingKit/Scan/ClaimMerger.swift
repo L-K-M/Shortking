@@ -59,7 +59,7 @@ public enum ClaimMerger {
 
         var result = claims
         var indicesByCombo: [KeyCombo: [Int]] = [:]
-        for (index, claim) in result.enumerated() where claim.isBinding {
+        for (index, claim) in result.enumerated() where claim.enabled && claim.isBinding {
             indicesByCombo[claim.combo, default: []].append(index)
         }
 

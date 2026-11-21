@@ -257,7 +257,7 @@ struct ComboRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(claimantSummary)
                     .lineLimit(1)
-                if let label = group.winner?.label {
+                if let label = actionLabel {
                     Text(label)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -284,6 +284,12 @@ struct ComboRow: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    private var actionLabel: String? {
+        if let winner = group.winner { return winner.label }
+        let menus = group.menuOnlyBindings
+        return menus.count == 1 ? menus[0].label : nil
     }
 
     private var claimantSummary: String {

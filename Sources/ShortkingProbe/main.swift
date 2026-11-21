@@ -83,8 +83,8 @@ func printUsage() {
       shortking-probe [--breadth common|wide|exhaustive]
       shortking-probe --combos <keyCode:modifiers,…>
 
-    Registers each combination momentarily and releases it immediately; a refusal
-    means someone else holds it. Prints a JSON ProbeReport on stdout.
+    Registers and releases each combination. Shared registrations may coexist
+    with a successful probe. Prints a JSON ProbeReport on stdout.
 
     OPTIONS:
       --breadth <b>   How much of the combination space to sweep. Default: common.
@@ -98,9 +98,15 @@ func printUsage() {
 
 // MARK: - Run
 
+if CommandLine.arguments.dropFirst() == [ProbeCalibration.checkArgument] {
+    exit(ProbeCalibration.checkHeldKeys())
+}
+
 let arguments = parseArguments(CommandLine.arguments)
 
-let report = ProbeSweep.run(breadth: arguments.breadth, combos: arguments.combos)
+let report = ProbeSweep.run(
+    breadth: arguments.breadth, combos: arguments.combos, verification: ProbeCalibration.measure()
+)
 
 let encoder = JSONEncoder()
 encoder.dateEncodingStrategy = .iso8601

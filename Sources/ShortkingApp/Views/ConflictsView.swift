@@ -201,11 +201,14 @@ struct ConflictListRow: View {
             }
 
             if let winner = conflict.winner {
-                ClaimChipRow(caption: "Wins:", claims: [winner])
+                ClaimChipRow(caption: "Highest priority", claims: [winner])
             }
 
             if !dedupedLosers.isEmpty {
-                ClaimChipRow(caption: "Loses:", claims: dedupedLosers)
+                ClaimChipRow(
+                    caption: conflict.winner == nil ? "Competing claims" : "Lower priority",
+                    claims: dedupedLosers
+                )
             }
         }
         .padding(.vertical, 8)

@@ -76,6 +76,7 @@ public final class AdapterRegistry: ClaimSource {
 
     public static func defaultAdapters() -> [ConfigAdapter] {
         [
+            DeskflowAdapter(),
             KarabinerAdapter(),
             SkhdAdapter(),
             HammerspoonAdapter(),

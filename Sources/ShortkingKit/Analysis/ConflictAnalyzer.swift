@@ -26,7 +26,7 @@ public enum ConflictAnalyzer {
     // MARK: - Classification
 
     static func conflict(for group: ComboGroup) -> Conflict? {
-        let active = group.claims.filter { $0.enabled && $0.isBinding }
+        let active = group.enabledBindings
         guard !active.isEmpty else { return nil }
 
         let globals = active.filter { $0.layer.isGlobal }
@@ -54,10 +54,10 @@ public enum ConflictAnalyzer {
         // Two or more claims at the *same* global layer: a genuine fight, and which
         // one wins is not predictable from the outside.
         if globals.count > 1 {
-            let lowestLayer = globals.map(\.layer).min()!
-            let atLowest = globals.filter { $0.layer == lowestLayer }
+            let atLowest = ComboGroup.earliestLayerBindings(in: globals)
 
             if atLowest.count > 1 {
+                let lowestLayer = atLowest[0].layer
                 // Described per claim rather than per owner: macOS routinely binds
                 // one combination to several symbolic hotkeys, and "macOS and macOS
                 // all claim ⌃↓" tells the user nothing about which two functions
@@ -77,9 +77,8 @@ public enum ConflictAnalyzer {
                     winner: nil,
                     losers: atLowest,
                     explanation: "\(group.combo.displayString) is claimed \(atLowest.count) times "
-                        + "at the \(lowestLayer.displayName) layer — \(list(described)). Which one "
-                        + "wins depends on registration order, so the behaviour can change between "
-                        + "reboots."
+                        + "at the \(lowestLayer.displayName) layer by \(list(described)). "
+                        + "The inventory cannot determine which action will run."
                         + (isSystemDefault
                             ? " These are all macOS's own shortcuts, so this is how the system "
                                 + "shipped rather than something another app did."
@@ -117,10 +116,9 @@ public enum ConflictAnalyzer {
                 kind: .contextual,
                 winner: winner,
                 losers: appLocals,
-                explanation: "\(winner.ownerName) holds \(group.combo.displayString) at the "
-                    + "\(winner.layer.displayName) layer, which matches before any app sees the key. "
-                    + "\(names(appLocals)) will never receive it"
-                    + (appLocals.count == 1 ? " even when it is frontmost." : " even when frontmost."),
+                explanation: "\(winner.ownerName) has a global binding for \(group.combo.displayString) "
+                    + "at the \(winner.layer.displayName) layer. When active, it takes precedence "
+                    + "over the menu shortcuts in \(names(appLocals)).",
                 suggestion: "Rebind \(winner.ownerName)'s shortcut if you need "
                     + "\(names(appLocals)) to keep working.",
                 severity: .medium

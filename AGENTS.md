@@ -46,8 +46,8 @@ The inventory, conflict analysis, probing, suspects, health checks, differential
 Detective Mode are implemented. Two behaviours are verified at runtime rather than assumed, because
 they change between macOS releases:
 
-- **Is duplicate hotkey registration refused?** Measured on every scan. If this machine permits it,
-  the probe map is *hidden* rather than shown wrongly, and Health says so.
+- **Which registrations can the probe detect?** Each scan tests shared and exclusive registrations
+  across two processes. When shared registrations can coexist, an accepted probe leaves ownership open.
 - **Do per-pid taps observe WindowServer hotkey delivery?** If live capture returns nothing,
   Shortking falls back to the sandwich taps, differential learning, and side-channel correlation.
 
