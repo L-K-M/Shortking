@@ -8,7 +8,8 @@ import Foundation
 /// (`NX_SYSDEFINED`, type 14) event **to the registering process**, with
 /// `subtype == 6` for key down, `9` for key up, and the hotkey identifier in
 /// `data1`. Attaching a listen-only per-pid tap to each suspect and pressing the key
-/// therefore names the owner outright: exactly one process receives it.
+/// identifies the processes observed receiving the event. Shared registrations
+/// can produce more than one recipient.
 ///
 /// Because `data1` is the malloc'd `HotButtonData` pointer, it is a stable
 /// per-registration identity for that process's lifetime — which is what lets

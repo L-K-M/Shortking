@@ -486,6 +486,23 @@ final class OptionHardeningEvidenceTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testInvestigationDistinguishesDisabledBindingsAndScopesTheProbeRefusal() {
+        let session = DetectiveSession(store: AttributionStore(persistent: false))
+        let saved = Claim(combo: optionOnly, layer: .windowServer, status: .known,
+                          owner: Owner(name: "Deskflow"), enabled: false)
+        let menu = Claim(combo: optionOnly, layer: .appMenu, status: .known, owner: Owner(name: "Finder"))
+        session.investigate(combo: optionOnly, knownClaims: [saved, menu],
+                            probeReport: report(outcome: .restricted, combo: optionOnly))
+
+        let disabled = session.findings.first { $0.headline.contains("Deskflow") }
+        XCTAssertTrue(disabled?.detail.localizedCaseInsensitiveContains("disabled") == true)
+        let active = session.findings.first { $0.headline.contains("Finder") }
+        XCTAssertNotNil(active)
+        XCTAssertFalse(active?.detail.localizedCaseInsensitiveContains("disabled") == true)
+        XCTAssertTrue(session.findings.contains { $0.kind == .note && $0.detail.contains("Carbon") })
+    }
+
     /// "My ⌥⇧O shortcut stopped working after the upgrade" is answered entirely by
     /// the restriction, so the refusal belongs on the claim that thinks it holds the
     /// combination — but it is nobody's claim, so it must not become one.

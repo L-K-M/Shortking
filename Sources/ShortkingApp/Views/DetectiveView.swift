@@ -100,10 +100,8 @@ struct DetectiveContent: View {
             TechniqueCard(
                 title: "Live capture",
                 symbol: "dot.radiowaves.left.and.right",
-                summary: "Attaches listen-only taps to every process that could take a keystroke, "
-                    + "then waits for you to press it. When WindowServer matches a hotkey it "
-                    + "delivers a system-defined event to exactly one process — that process is "
-                    + "your answer, by name.",
+                summary: "Press the shortcut to see which monitored processes receive a hotkey "
+                    + "event from WindowServer. Shared registrations can have multiple recipients.",
                 requirement: "Needs Input Monitoring."
             ) {
                 HStack {

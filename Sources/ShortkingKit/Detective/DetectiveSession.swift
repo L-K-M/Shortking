@@ -106,6 +106,7 @@ public final class DetectiveSession: ObservableObject {
                     kind: .inventory,
                     headline: "\(claim.ownerName) — \(claim.label ?? "no label")",
                     detail: "\(claim.layer.displayName) layer, \(claim.status.displayName). "
+                        + (claim.enabled ? "" : "Disabled. ")
                         + (claim.evidence.first?.summary ?? ""),
                     confidence: claim.confidence
                 )
@@ -118,10 +119,9 @@ public final class DetectiveSession: ObservableObject {
                 findings.append(
                     Finding(
                         kind: .inventory,
-                        headline: "Probe: this combination is already claimed",
-                        detail: "Registering it was refused, so something holds it at the "
-                            + "WindowServer layer. If nothing above names an owner, that owner is "
-                            + "not visible in any config file or menu bar.",
+                        headline: "The global hotkey probe found a registration conflict",
+                        detail: "WindowServer refused the probe’s exclusive Carbon registration "
+                            + "because the shortcut was already registered. The refusal does not identify its owner.",
                         confidence: 0.5
                     )
                 )
@@ -129,10 +129,9 @@ public final class DetectiveSession: ObservableObject {
                 findings.append(
                     Finding(
                         kind: .note,
-                        headline: "This combination cannot be registered by any app",
-                        detail: "Since macOS 15, shortcuts whose only modifiers are ⌥ or ⌥⇧ are "
-                            + "refused system-wide as an anti-keylogging measure. This is not a "
-                            + "conflict — no app can claim it, including the one you expected to.",
+                        headline: "macOS refused the probe’s hotkey registration",
+                        detail: "The probe tried to register this shortcut as a Carbon global hotkey. "
+                            + "App menus and event taps can still handle the key.",
                         confidence: 1.0
                     )
                 )
@@ -149,10 +148,9 @@ public final class DetectiveSession: ObservableObject {
                 findings.append(
                     Finding(
                         kind: .inventory,
-                        headline: "Probe: nobody holds this at the WindowServer layer",
-                        detail: "The combination registers cleanly, so whatever consumed your key "
-                            + "press is an event tap, a virtual HID remap, or the frontmost app "
-                            + "itself.",
+                        headline: "The probe found no conflicting Carbon registration",
+                        detail: "The probe registered this shortcut successfully. Event taps, remaps "
+                            + "and app-menu commands can still handle it.",
                         confidence: 0.5
                     )
                 )
