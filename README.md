@@ -123,6 +123,11 @@ make run      # assemble and launch
 make test     # unit tests
 ```
 
+To test live attribution on a logged-in Mac, give the test host Input Monitoring and
+Accessibility, then run `SHORTKING_LIVE_HOTKEY_TEST=1 swift test --filter UnfamiliarHotkeyLiveTests`.
+The test registers ⌘1 and ⌘2 in a temporary background app, sends both shortcuts, and
+checks the app’s receipts against the findings for ⌘1.
+
 **Build the bundle, not the bare binary.** TCC identity is bundle- and signature-based: run the
 executable straight out of `.build/` and `AXIsProcessTrusted()` reports on whatever launched it,
 not on Shortking. The Health screen detects and warns about this, but it is worth knowing up front.
